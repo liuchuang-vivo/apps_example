@@ -22,7 +22,6 @@ use std::rc::Rc;
 
 const SCAN_POLL_ATTEMPTS: usize = 25;
 const SCAN_POLL_INTERVAL_MS: u128 = 200;
-const WIFI_STARTUP_DELAY_MS: u128 = 1000;
 const AUTO_SCAN_INTERVAL_MS: u128 = 15_000;
 const SCAN_BUFFER_SIZE: usize = 2048;
 const MAX_VISIBLE_NETWORKS: usize = 6;
@@ -56,7 +55,7 @@ struct WifiScanner {
     scan_buffer: Vec<u8>,
     state: WifiScanState,
     scan_requested: bool,
-    first_scan_at: u128,
+    page_active: bool,
     next_auto_scan_at: u128,
 }
 
@@ -330,14 +329,24 @@ fn show_scan_result(ui: &MainWindow, result: IoResult<WifiScanResults>) {
 
 impl WifiScanner {
     fn new() -> Self {
-        let first_scan_at = uptime_millis().saturating_add(WIFI_STARTUP_DELAY_MS);
         Self {
             socket: None,
             scan_buffer: vec![0u8; SCAN_BUFFER_SIZE],
             state: WifiScanState::Idle,
-            scan_requested: true,
-            first_scan_at,
-            next_auto_scan_at: first_scan_at,
+            scan_requested: false,
+            page_active: false,
+            next_auto_scan_at: 0,
+        }
+    }
+
+    fn set_page_active(&mut self, ui: &MainWindow, active: bool) {
+        self.page_active = active;
+        if active {
+            self.request_scan(ui);
+        } else {
+            // Cancel a scan that was requested but has not started yet. An
+            // in-flight driver scan is allowed to finish, then remains idle.
+            self.scan_requested = false;
         }
     }
 
@@ -387,8 +396,8 @@ impl WifiScanner {
         let now = uptime_millis();
         match self.state {
             WifiScanState::Idle => {
-                if now < self.first_scan_at
-                    || (!self.scan_requested && now < self.next_auto_scan_at)
+                if !self.scan_requested
+                    && (!self.page_active || now < self.next_auto_scan_at)
                 {
                     return;
                 }
@@ -436,6 +445,14 @@ pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
     ui.on_scan_requested(move || {
         if let Some(ui) = ui_weak.upgrade() {
             callback_scanner.borrow_mut().request_scan(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let active_scanner = scanner.clone();
+    ui.on_wifi_page_active_changed(move |active| {
+        if let Some(ui) = ui_weak.upgrade() {
+            active_scanner.borrow_mut().set_page_active(&ui, active);
         }
     });
 

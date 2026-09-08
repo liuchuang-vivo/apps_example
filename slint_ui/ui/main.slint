@@ -24,6 +24,13 @@ export component MainWindow inherits Window {
     in-out property <int> result-count: 0;
     in-out property <string> status-text: "Preparing wireless scanner";
     callback scan-requested();
+    callback wifi-page-active-changed(bool);
+
+    // Scan immediately on entry and every 15 seconds while this page remains
+    // active. Leaving it disables further automatic scans.
+    changed current-app => {
+        root.wifi-page-active-changed(root.current-app == 11);
+    }
 
     // Launcher
     if current-app == -1: Launcher {
