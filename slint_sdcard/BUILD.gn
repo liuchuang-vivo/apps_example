@@ -19,9 +19,72 @@ import("//build/toolchain/blueos.gni")
 
 _slint_sdcard_generated = "${target_gen_dir}/slint_sdcard_main_window.rs"
 
+if (current_toolchain == "//build/toolchain:host") {
+  executable("slint_sdcard_layout_test") {
+    sources = [ "tests/layout.rs" ]
+    inputs = [
+      _slint_sdcard_generated,
+      "src/text_pages.rs",
+      "assets/text-metrics.rs",
+      "assets/website/01-introduction.txt",
+    ]
+    rustflags = [ "--edition=2021" ]
+    rustenv =
+        [ "SLINT_SDCARD_GENERATED=" + rebase_path(_slint_sdcard_generated) ]
+    deps = [
+      ":generate_slint_sdcard",
+      "//external/vendor/slint-1.17.1:slint",
+    ]
+  }
+}
+
+action("check_layout") {
+  script = "tools/check_layout.py"
+  _test = ":slint_sdcard_layout_test(//build/toolchain:host)"
+  deps = [ _test ]
+  outputs = [
+    "${target_gen_dir}/layout-check/passed.txt",
+    "${target_gen_dir}/layout-check/browser.ppm",
+    "${target_gen_dir}/layout-check/text.ppm",
+    "${target_gen_dir}/layout-check/image.ppm",
+  ]
+  args = [
+    rebase_path(get_label_info(_test, "root_out_dir") +
+                "/bin/slint_sdcard_layout_test"),
+    rebase_path(outputs[0]),
+  ]
+}
+
+action("check_text_pages") {
+  script = "tools/check_text_pages.py"
+  inputs = [
+    "src/text_pages.rs",
+    "assets/text-metrics.rs",
+    "assets/website/01-introduction.txt",
+    "assets/website/02-features.txt",
+    "assets/website/03-capabilities.txt",
+    "assets/website/04-memory.txt",
+    "assets/website/05-filesystem.txt",
+    "assets/website/06-drivers.txt",
+    "assets/website/README.txt",
+  ]
+  outputs = [
+    "${target_gen_dir}/text-pages-tests.ok",
+    "${target_gen_dir}/text-pages-tests.bin",
+  ]
+  args = [
+    rebase_path(inputs[0]),
+    rebase_path(outputs[0]),
+  ]
+}
+
 action("generate_slint_sdcard") {
   script = "//build/scripts/run_slint_cli.py"
-  inputs = [ "app.slint" ]
+  inputs = [
+    "app.slint",
+    "assets/website-text.ttf",
+    "assets/website-glyphs.slint",
+  ]
   outputs = [ _slint_sdcard_generated ]
   args = [
     "--embed-resources",
@@ -41,6 +104,20 @@ reload_autoconf_and_build("slint_sdcard_example") {
   inputs = [
     _slint_sdcard_generated,
     "src/math.rs",
+    "src/website.rs",
+    "src/text_pages.rs",
+    "assets/text-metrics.rs",
+    "assets/website/01-introduction.txt",
+    "assets/website/02-features.txt",
+    "assets/website/03-capabilities.txt",
+    "assets/website/04-memory.txt",
+    "assets/website/05-filesystem.txt",
+    "assets/website/06-drivers.txt",
+    "assets/website/10-banner.png",
+    "assets/website/11-architecture.png",
+    "assets/website/12-filesystem.png",
+    "assets/website/13-platform.png",
+    "assets/website/README.txt",
   ]
   rustenv = [ "SLINT_SDCARD_GENERATED=" + rebase_path(_slint_sdcard_generated) ]
   deps = [
