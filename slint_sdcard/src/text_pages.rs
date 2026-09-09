@@ -31,9 +31,16 @@ fn advance(character: char) -> u32 {
     (units * FONT_SIZE).div_ceil(metrics::UNITS_PER_EM)
 }
 
-fn finish_line(page: &mut String, pages: &mut Vec<String>, line: &mut usize) {
+fn finish_line(
+    page: &mut String,
+    line: &mut usize,
+    page_count: &mut usize,
+    emit: &mut impl FnMut(&str),
+) {
     if *line + 1 == PAGE_LINES {
-        pages.push(std::mem::take(page));
+        emit(page);
+        *page_count += 1;
+        page.clear();
         *line = 0;
     } else {
         page.push('\n');
@@ -41,11 +48,9 @@ fn finish_line(page: &mut String, pages: &mut Vec<String>, line: &mut usize) {
     }
 }
 
-pub fn paginate_text(contents: &str) -> Vec<String> {
-    // Retain pages only, not a second vector of every line. Newline-heavy 8 KiB input
-    // must not create thousands of intermediate String headers on the device heap.
-    let mut pages = Vec::new();
+fn emit_pages(contents: &str, mut emit: impl FnMut(&str)) {
     let mut page = String::new();
+    let mut page_count = 0;
     let mut line = 0;
     let mut width = 0;
     let mut columns = 0;
@@ -55,7 +60,7 @@ pub fn paginate_text(contents: &str) -> Vec<String> {
             continue;
         }
         if character == '\n' {
-            finish_line(&mut page, &mut pages, &mut line);
+            finish_line(&mut page, &mut line, &mut page_count, &mut emit);
             width = 0;
             columns = 0;
             ended_with_newline = true;
@@ -70,7 +75,7 @@ pub fn paginate_text(contents: &str) -> Vec<String> {
         for _ in 0..repeats {
             let next_width = advance(character);
             if width != 0 && width + next_width > LINE_WIDTH {
-                finish_line(&mut page, &mut pages, &mut line);
+                finish_line(&mut page, &mut line, &mut page_count, &mut emit);
                 width = 0;
                 columns = 0;
             }
@@ -83,12 +88,64 @@ pub fn paginate_text(contents: &str) -> Vec<String> {
         if ended_with_newline {
             page.pop();
         }
-        pages.push(page);
+        emit(&page);
+        page_count += 1;
     }
-    if pages.is_empty() {
-        return vec!["(empty file)".to_string()];
+    if page_count == 0 {
+        emit("(empty file)");
     }
+}
+
+pub fn paginate_text(contents: &str) -> Vec<String> {
+    let mut pages = Vec::new();
+    emit_pages(contents, |page| pages.push(page.to_owned()));
     pages
+}
+
+/// Retains only the bounded source text. Pages are generated on demand by
+/// scanning at most 8 KiB, avoiding storage proportional to the page count.
+#[derive(Default)]
+pub struct OnDemandTextPages {
+    contents: String,
+    page_count: usize,
+}
+
+impl OnDemandTextPages {
+    pub fn new(contents: String) -> Self {
+        let mut page_count = 0;
+        emit_pages(&contents, |_| page_count += 1);
+        Self {
+            contents,
+            page_count,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<String> {
+        if index >= self.page_count {
+            return None;
+        }
+        let mut current = 0;
+        let mut result = None;
+        emit_pages(&self.contents, |page| {
+            if current == index {
+                result = Some(page.to_owned());
+            }
+            current += 1;
+        });
+        result
+    }
+
+    pub fn len(&self) -> usize {
+        self.page_count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.page_count == 0
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
 }
 
 #[cfg(test)]
@@ -136,6 +193,13 @@ mod tests {
         check_bounds(&pages);
         assert_eq!(pages.len(), (8usize * 1024).div_ceil(PAGE_LINES));
         assert!(pages.iter().map(String::capacity).sum::<usize>() <= 16 * 1024);
+
+        let on_demand = OnDemandTextPages::new("\n".repeat(8 * 1024));
+        assert_eq!(on_demand.len(), pages.len());
+        for (index, page) in pages.iter().enumerate() {
+            assert_eq!(on_demand.get(index).as_deref(), Some(page.as_str()));
+        }
+        assert!(on_demand.contents.capacity() <= 8 * 1024);
     }
 
     #[test]
