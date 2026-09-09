@@ -62,6 +62,7 @@ reload_autoconf_and_build("slint_ui_example") {
     "resources/background_480x480.rgb565",
     "src/brightness.rs",
     "src/png_view.rs",
+    "src/sched_mon.rs",
     "src/sdcard.rs",
     "src/imu.rs",
     "../slint_sdcard/src/text_pages.rs",

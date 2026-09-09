@@ -36,6 +36,19 @@ export component MainWindow inherits Window {
     callback set-brightness(int);
     callback brightness-page-active-changed(bool);
 
+    // SchedMon page properties
+    in property <int> cpu-cores: 1;
+    in property <[float]> cpu-usage-percent;
+    in property <float> mem-total-kb: 0.0;
+    in property <float> mem-used-kb: 0.0;
+    in property <float> mem-max-used-kb: 0.0;
+    in property <[string]> task-tids;
+    in property <[string]> task-types;
+    in property <[string]> task-states;
+    in property <[string]> task-prios;
+    in property <[string]> task-names;
+    callback refresh-tasks();
+
     in-out property <string> accel-x: "---";
     in-out property <string> accel-y: "---";
     in-out property <string> accel-z: "---";
@@ -88,7 +101,20 @@ export component MainWindow inherits Window {
     }
 
     // App pages
-    if current-app == 6: SchedMonPage { go-back => { root.current-app = -1; } }
+    if current-app == 6: SchedMonPage {
+        cpu-cores <=> root.cpu-cores;
+        cpu-usage-percent <=> root.cpu-usage-percent;
+        mem-total-kb <=> root.mem-total-kb;
+        mem-used-kb <=> root.mem-used-kb;
+        mem-max-used-kb <=> root.mem-max-used-kb;
+        task-tids <=> root.task-tids;
+        task-types <=> root.task-types;
+        task-states <=> root.task-states;
+        task-prios <=> root.task-prios;
+        task-names <=> root.task-names;
+        refresh-tasks => { root.refresh-tasks(); }
+        go-back => { root.current-app = -1; }
+    }
     if current-app == 7: DemoPage { title: "CPU/Memory"; accent: #6fe0bd;  go-back => { root.current-app = -1; } }
     if current-app == 8: DemoPage { title: "文件 IO";    accent: #f0bd62;  go-back => { root.current-app = -1; } }
     if current-app == 9: ScreenColorPage { go-back => { root.current-app = -1; } }

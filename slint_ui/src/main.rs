@@ -25,6 +25,7 @@ mod app_window {
 mod background;
 mod brightness;
 mod math;
+mod sched_mon;
 mod png_view;
 mod sdcard;
 mod wifi;
@@ -567,7 +568,7 @@ fn is_bgra8888(info: &libc::fb_var_screeninfo) -> bool {
         && info.blue.length == 8
 }
 
-fn syscall_error(ret: libc::c_int) -> Error {
+pub(crate) fn syscall_error(ret: libc::c_int) -> Error {
     if ret == -1 {
         Error::last_os_error()
     } else {
@@ -753,6 +754,7 @@ fn run_slint_ui() -> IoResult<()> {
     });
     let _wifi_scan_timer = wifi::install(&ui);
     let _imu_timer = imu::install(&ui);
+    let _sched_mon_timer = sched_mon::install(&ui);
     brightness::install(&ui);
     ui.show()
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
