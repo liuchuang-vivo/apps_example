@@ -36,7 +36,7 @@ export component ScreenColorPage inherits AppPage {
             y: 72px;
             width: 376px;
             height: 24px;
-            text: Theme.theme-name == "vivo" ? "当前：vivo 深蓝" : "当前：灰色";
+            text: Theme.theme-name == "vivo" ? "当前：vivo 深蓝" : "当前：深青";
             color: Theme.secondary-text;
             font-size: 12px;
             font-weight: 600;
@@ -68,7 +68,7 @@ export component ScreenColorPage inherits AppPage {
                 y: 0;
                 width: 154px;
                 height: parent.height;
-                text: Theme.theme-name == "vivo" ? "VIVO" : "GREY";
+                text: Theme.theme-name == "vivo" ? "深蓝" : "深青";
                 color: Theme.primary-text;
                 font-size: 18px;
                 font-weight: 800;
@@ -81,7 +81,7 @@ export component ScreenColorPage inherits AppPage {
             y: 218px;
             width: 280px;
             height: 58px;
-            background: switch-area.pressed ? Theme.pressed-background : Theme.raised-background;
+            background: Theme.raised-background;
             border-width: 1px;
             border-color: Theme.border-color;
             border-radius: 12px;
@@ -89,7 +89,7 @@ export component ScreenColorPage inherits AppPage {
             Text {
                 width: parent.width;
                 height: parent.height;
-                text: Theme.theme-name == "vivo" ? "切换到灰色" : "切换到 vivo 深蓝";
+                text: Theme.theme-name == "vivo" ? "切换到深青" : "切换到 vivo 深蓝";
                 color: Theme.accent-color;
                 font-size: 16px;
                 font-weight: 800;
@@ -100,7 +100,7 @@ export component ScreenColorPage inherits AppPage {
             switch-area := TouchArea {
                 width: parent.width;
                 height: parent.height;
-                clicked => { Theme.theme-name = Theme.theme-name == "vivo" ? "default" : "vivo"; }
+                clicked => { Theme.theme-name = Theme.theme-name == "default" ? "vivo" : "default"; }
             }
         }
     }

@@ -7,7 +7,10 @@ import { Theme } from "./components/theme.slint";
 import { DemoPage } from "./pages/demo-page.slint";
 import { SchedMonPage } from "./pages/sched-mon-page.slint";
 import { ScreenColorPage } from "./pages/screen-color-page.slint";
+import { SdCardPage, SdFileEntry } from "./pages/sd-card-page.slint";
 import { WifiScanPage, WifiNetwork } from "./pages/wifi-scan-page.slint";
+import "../../slint_sdcard/assets/website-text.ttf";
+import { WebsiteGlyphs } from "../../slint_sdcard/assets/website-glyphs.slint";
 
 export component MainWindow inherits Window {
     width: 480px;
@@ -22,14 +25,44 @@ export component MainWindow inherits Window {
     in property <[WifiNetwork]> networks;
     in-out property <bool> scanning: false;
     in-out property <int> result-count: 0;
-    in-out property <string> status-text: "Preparing wireless scanner";
+    in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
     callback wifi-page-active-changed(bool);
 
-    // Scan immediately on entry and every 15 seconds while this page remains
-    // active. Leaving it disables further automatic scans.
+    in property <[SdFileEntry]> sd-entries;
+    in-out property <string> sd-path-text: "/data";
+    in-out property <string> sd-status-text: "打开页面以读取 SD 卡";
+    in-out property <int> sd-total-count: 0;
+    in-out property <int> sd-visible-count: 0;
+    in-out property <int> sd-scroll-offset: 0;
+    in-out property <bool> sd-read-error: false;
+    in-out property <bool> sd-text-open: false;
+    in-out property <string> sd-text-title: "";
+    // Seed the software renderer with glyphs needed by dynamic SD-card text.
+    in-out property <string> sd-text-content: WebsiteGlyphs.characters;
+    in-out property <string> sd-text-page: "";
+    in-out property <bool> sd-text-has-previous: false;
+    in-out property <bool> sd-text-has-next: false;
+    in-out property <bool> sd-image-open: false;
+    in-out property <string> sd-image-title: "";
+    in-out property <string> sd-image-status: "";
+    callback sd-page-active-changed(bool);
+    callback sd-entry-selected(int);
+    callback sd-up-requested();
+    callback sd-refresh-requested();
+    callback sd-scroll-up();
+    callback sd-scroll-down();
+    callback sd-close-text();
+    callback sd-previous-text-page();
+    callback sd-next-text-page();
+    callback sd-close-image();
+
     changed current-app => {
         root.wifi-page-active-changed(root.current-app == 11);
+        root.sd-page-active-changed(root.current-app == 13);
+        if root.current-app != 13 {
+            root.sd-image-open = false;
+        }
     }
 
     // Launcher
@@ -55,7 +88,38 @@ export component MainWindow inherits Window {
         go-back => { root.current-app = -1; }
     }
     if current-app == 12: DemoPage { title: "IMU Sensors"; accent: #f08091; go-back => { root.current-app = -1; } }
-    if current-app == 13: DemoPage { title: "SD 卡";     accent: #f0bd62;  go-back => { root.current-app = -1; } }
+    if current-app == 13: SdCardPage {
+        entries: root.sd-entries;
+        path-text <=> root.sd-path-text;
+        status-text <=> root.sd-status-text;
+        total-count <=> root.sd-total-count;
+        visible-count <=> root.sd-visible-count;
+        scroll-offset <=> root.sd-scroll-offset;
+        read-error <=> root.sd-read-error;
+        text-open <=> root.sd-text-open;
+        text-title <=> root.sd-text-title;
+        text-content <=> root.sd-text-content;
+        text-page <=> root.sd-text-page;
+        text-has-previous <=> root.sd-text-has-previous;
+        text-has-next <=> root.sd-text-has-next;
+        entry-selected(index) => { root.sd-entry-selected(index); }
+        up-requested => { root.sd-up-requested(); }
+        refresh-requested => { root.sd-refresh-requested(); }
+        scroll-up => { root.sd-scroll-up(); }
+        scroll-down => { root.sd-scroll-down(); }
+        close-text => { root.sd-close-text(); }
+        previous-text-page => { root.sd-previous-text-page(); }
+        next-text-page => { root.sd-next-text-page(); }
+        image-open <=> root.sd-image-open;
+        image-title <=> root.sd-image-title;
+        image-status <=> root.sd-image-status;
+        close-image => { root.sd-close-image(); }
+        go-back => {
+            root.sd-image-open = false;
+            root.sd-text-open = false;
+            root.current-app = -1;
+        }
+    }
     if current-app == 14: DemoPage { title: "HTTP GET";  accent: #5ca9ff;  go-back => { root.current-app = -1; } }
     if current-app == 15: DemoPage { title: "音频";      accent: #cf8ff2;  go-back => { root.current-app = -1; } }
 }

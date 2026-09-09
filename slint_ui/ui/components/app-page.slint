@@ -15,9 +15,9 @@ export component AppPage inherits Rectangle {
 
     background: transparent;
 
-    // Swipe-right gesture to go back
+    // Swipe right from the left edge to go back without intercepting page content.
     touch-gesture := TouchArea {
-        width: parent.width;
+        width: 64px;
         height: parent.height;
         property <length> start-x: 0;
         property <bool> tracking: false;

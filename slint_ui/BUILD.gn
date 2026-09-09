@@ -32,7 +32,10 @@ action("generate_slint_ui") {
     "ui/pages/demo-page.slint",
     "ui/pages/sched-mon-page.slint",
     "ui/pages/screen-color-page.slint",
+    "ui/pages/sd-card-page.slint",
     "ui/pages/wifi-scan-page.slint",
+    "../slint_sdcard/assets/website-text.ttf",
+    "../slint_sdcard/assets/website-glyphs.slint",
   ]
   outputs = [ _slint_ui_generated ]
   args = [
@@ -55,11 +58,16 @@ reload_autoconf_and_build("slint_ui_example") {
   inputs = [
     _slint_ui_generated,
     "resources/background_480x480.rgb565",
+    "src/png_view.rs",
+    "src/sdcard.rs",
+    "../slint_sdcard/src/text_pages.rs",
+    "../slint_sdcard/assets/text-metrics.rs",
   ]
   rustenv = [ "SLINT_UI_GENERATED=" + rebase_path(_slint_ui_generated) ]
   deps = [
     ":generate_slint_ui",
     "//external/vendor/libm-0.2.16:libm",
+    "//external/vendor/png-0.18.1:png",
     "//external/vendor/slint-1.17.1:slint",
     "//kernel/adapter/esp_radio_sys",
     "//kernel/rsrt:rsrt_std",

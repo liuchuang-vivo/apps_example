@@ -1,12 +1,12 @@
 // Shared application palette.
-// Switch between two themes via Theme.theme-name: "default" (grey) or "vivo" (deep-navy).
+// Switch between two themes via Theme.theme-name: "default" (dark-teal) or "vivo" (deep-navy).
 // The theme-name property is the single source of truth, so switching it updates
 // the launcher and every page immediately.
 
 export global Theme {
     in-out property <string> theme-name: "default";
 
-    // -- default (grey) theme --
+    // default (dark-teal) theme
     // Colors are the same as the original dark-mode: true palette.
     out property <color> _screen-background-default: #0b1115;
     out property <color> _surface-background-default: #111b20;
@@ -20,7 +20,7 @@ export global Theme {
     out property <color> _muted-text-default: #6c7e82;
     out property <color> _accent-color-default: #6fe0bd;
 
-    // -- vivo-dark theme --
+    // vivo-dark theme
     out property <color> _screen-background-vivo: #0a0e27;
     out property <color> _surface-background-vivo: #141a38;
     out property <color> _card-background-vivo: #141a38;
@@ -33,7 +33,7 @@ export global Theme {
     out property <color> _muted-text-vivo: #9aa0b4;
     out property <color> _accent-color-vivo: #415fff;
 
-    // -- resolved palette (switch based on theme-name) --
+    // resolved palette (switch based on theme-name)
     out property <color> screen-background: theme-name == "vivo" ? _screen-background-vivo : _screen-background-default;
     out property <color> surface-background: theme-name == "vivo" ? _surface-background-vivo : _surface-background-default;
     out property <color> card-background: theme-name == "vivo" ? _card-background-vivo : _card-background-default;
