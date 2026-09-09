@@ -1,0 +1,351 @@
+// SD card browser integrated into the launcher.
+// Compatible with SoftwareRenderer::render_by_line: no Path items.
+
+import { AppPage } from "../components/app-page.slint";
+import { Theme } from "../components/theme.slint";
+
+export struct SdFileEntry {
+    name: string,
+    is-dir: bool,
+    can-open: bool,
+    is-image: bool,
+    size-text: string,
+}
+
+component SmallButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> available: true;
+    callback activated();
+    background: !available ? Theme.card-background : Theme.raised-background;
+    border-width: 1px;
+    border-color: available ? #f0bd62 : Theme.border-color;
+    border-radius: 8px;
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.available ? #f0bd62 : Theme.muted-text;
+        font-size: 10px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.available;
+        clicked => { root.activated(); }
+    }
+}
+
+export component SdCardPage inherits AppPage {
+    title: "SD 卡";
+    subtitle: "文件浏览器  /  /data";
+    accent: #f0bd62;
+
+    in property <[SdFileEntry]> entries;
+    in-out property <string> path-text: "/data";
+    in-out property <string> status-text: "";
+    in-out property <int> total-count: 0;
+    in-out property <int> visible-count: 0;
+    in-out property <int> scroll-offset: 0;
+    in-out property <bool> read-error: false;
+    in-out property <bool> text-open: false;
+    in-out property <string> text-title: "";
+    in-out property <string> text-content: "";
+    in-out property <string> text-page: "";
+    in-out property <bool> text-has-previous: false;
+    in-out property <bool> text-has-next: false;
+    // PNG image viewer
+    in-out property <bool> image-open: false;
+    in-out property <string> image-title: "";
+    in-out property <string> image-status: "";
+
+    callback entry-selected(int);
+    callback up-requested();
+    callback refresh-requested();
+    callback scroll-up();
+    callback scroll-down();
+    callback close-text();
+    callback previous-text-page();
+    callback next-text-page();
+    callback close-image();
+
+    if !root.text-open: Rectangle {
+        x: 16px;
+        y: 96px;
+        width: 448px;
+        height: 42px;
+        background: Theme.card-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 8px;
+
+        Text {
+            x: 12px;
+            width: 354px;
+            height: parent.height;
+            text: root.path-text;
+            color: Theme.secondary-text;
+            font-size: 9px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        SmallButton {
+            x: 374px;
+            y: 4px;
+            width: 66px;
+            height: 34px;
+            label: "上一层";
+            available: root.path-text != "/data";
+            activated => { root.up-requested(); }
+        }
+    }
+
+    if !root.text-open && root.total-count == 0: Rectangle {
+        x: 16px;
+        y: 150px;
+        width: 448px;
+        height: 250px;
+        background: Theme.card-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 10px;
+
+        Text {
+            y: 100px;
+            width: parent.width;
+            height: 50px;
+            text: root.read-error ? "SD 不可用" : "空目录";
+            color: root.read-error ? #f08091 : Theme.muted-text;
+            font-size: 21px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    for entry[index] in root.entries: Rectangle {
+        x: 16px;
+        y: 150px + index * 50px;
+        width: 448px;
+        height: 44px;
+        visible: !root.text-open;
+        background: Theme.card-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 7px;
+
+        Rectangle {
+            x: 8px;
+            y: 8px;
+            width: 28px;
+            height: 28px;
+            background: entry.is-dir ? #284d42 : entry.is-image ? #3b405f : Theme.raised-background;
+            border-radius: 7px;
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: entry.is-dir ? "D" : entry.is-image ? "P" : entry.can-open ? "T" : "F";
+                color: entry.is-dir ? #6fe0bd : entry.is-image ? #aab5ff : Theme.secondary-text;
+                font-size: 10px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            x: 46px;
+            y: 2px;
+            width: 300px;
+            height: 23px;
+            text: entry.name;
+            color: Theme.primary-text;
+            font-size: 11px;
+            font-weight: 700;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            x: 46px;
+            y: 23px;
+            width: 300px;
+            height: 18px;
+            text: entry.is-dir ? "目录" : entry.size-text + (entry.is-image ? "  PNG" : entry.can-open ? "  文本" : "");
+            color: Theme.muted-text;
+            font-size: 8px;
+            vertical-alignment: center;
+        }
+        Text {
+            x: 354px;
+            width: 78px;
+            height: parent.height;
+            text: entry.can-open ? "打开" : "";
+            color: #f0bd62;
+            font-size: 9px;
+            font-weight: 700;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        entry-area := TouchArea {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    root.entry-selected(index);
+                }
+            }
+        }
+    }
+
+    if !root.text-open: Rectangle {
+        x: 16px;
+        y: 420px;
+        width: 448px;
+        height: 36px;
+
+        Text {
+            x: 0px;
+            width: 120px;
+            height: parent.height;
+            text: root.total-count > 0 ? (root.scroll-offset + 1) + "-" + (root.scroll-offset + root.visible-count) + "/" + root.total-count : root.status-text;
+            color: Theme.muted-text;
+            font-size: 8px;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        SmallButton {
+            x: 120px;
+            width: 100px;
+            height: parent.height;
+            label: "上一页";
+            available: root.scroll-offset > 0;
+            activated => { root.scroll-up(); }
+        }
+        SmallButton {
+            x: 228px;
+            width: 100px;
+            height: parent.height;
+            label: "下一页";
+            available: root.scroll-offset + root.visible-count < root.total-count;
+            activated => { root.scroll-down(); }
+        }
+    }
+
+    if root.text-open: Rectangle {
+        x: 0px;
+        y: 82px;
+        width: parent.width;
+        height: parent.height - 82px;
+        background: Theme.screen-background;
+        TouchArea { width: parent.width; height: parent.height; }
+
+        Rectangle {
+            x: 16px; y: 14px; width: 448px; height: 38px;
+            background: Theme.card-background;
+            border-radius: 8px;
+            Text {
+                x: 12px; width: 340px; height: parent.height;
+                text: root.text-title;
+                color: Theme.primary-text;
+                font-size: 11px;
+                font-weight: 700;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            SmallButton {
+                x: 362px; y: 3px; width: 78px; height: 32px;
+                label: "关闭";
+                activated => { root.close-text(); }
+            }
+        }
+        Rectangle {
+            x: 16px; y: 62px; width: 448px; height: 270px;
+            background: Theme.card-background;
+            border-width: 1px;
+            border-color: Theme.border-color;
+            border-radius: 9px;
+            Text {
+                x: 12px; y: 8px; width: 424px; height: 254px;
+                text: root.text-content;
+                color: Theme.primary-text;
+                font-family: "BlueOS Website Text";
+                font-size: 18px;
+                vertical-alignment: top;
+                wrap: no-wrap;
+            }
+        }
+        Text {
+            x: 16px; y: 340px; width: 120px; height: 36px;
+            text: root.text-page;
+            color: Theme.muted-text;
+            font-size: 9px;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+        }
+        SmallButton {
+            x: 120px; y: 340px; width: 100px; height: 36px;
+            label: "上一页";
+            available: root.text-has-previous;
+            activated => { root.previous-text-page(); }
+        }
+        SmallButton {
+            x: 228px; y: 340px; width: 100px; height: 36px;
+            label: "下一页";
+            available: root.text-has-next;
+            activated => { root.next-text-page(); }
+        }
+    }
+
+    if root.image-open: Rectangle {
+        x: 0px;
+        y: 82px;
+        width: parent.width;
+        height: parent.height - 82px;
+        background: #0b1115;
+        TouchArea { width: parent.width; height: parent.height; }
+
+        Rectangle {
+            x: 16px; y: 14px; width: 448px; height: 38px;
+            background: Theme.card-background;
+            border-radius: 8px;
+            Text {
+                x: 12px; width: 340px; height: parent.height;
+                text: root.image-title;
+                color: Theme.primary-text;
+                font-size: 11px;
+                font-weight: 700;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            SmallButton {
+                x: 362px; y: 3px; width: 78px; height: 32px;
+                label: "关闭";
+                activated => { root.close-image(); }
+            }
+        }
+        Rectangle {
+            x: 105px; y: 62px; width: 270px; height: 270px;
+            background: #05090c;
+            border-width: 1px;
+            border-color: #29334d;
+            border-radius: 0px;
+            // Image display area — the Rust backend draws pixels directly
+            // into this region via the framebuffer.
+        }
+        Text {
+            x: 16px; y: 340px; width: 376px; height: 36px;
+            text: root.image-status;
+            color: Theme.muted-text;
+            font-size: 9px;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+        }
+    }
+}
