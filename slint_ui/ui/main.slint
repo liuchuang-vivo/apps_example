@@ -4,6 +4,7 @@
 
 import { Launcher } from "./launcher/launcher.slint";
 import { Theme } from "./components/theme.slint";
+import { BrightnessPage } from "./pages/brightness-page.slint";
 import { DemoPage } from "./pages/demo-page.slint";
 import { SchedMonPage } from "./pages/sched-mon-page.slint";
 import { ScreenColorPage } from "./pages/screen-color-page.slint";
@@ -30,6 +31,10 @@ export component MainWindow inherits Window {
     in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
     callback wifi-page-active-changed(bool);
+
+    in-out property <int> brightness: 100;
+    callback set-brightness(int);
+    callback brightness-page-active-changed(bool);
 
     in-out property <string> accel-x: "---";
     in-out property <string> accel-y: "---";
@@ -69,6 +74,7 @@ export component MainWindow inherits Window {
     changed current-app => {
         root.wifi-page-active-changed(root.current-app == 11);
         root.sd-page-active-changed(root.current-app == 13);
+        root.brightness-page-active-changed(root.current-app == 10);
         if root.current-app != 13 {
             root.sd-image-open = false;
         }
@@ -86,7 +92,11 @@ export component MainWindow inherits Window {
     if current-app == 7: DemoPage { title: "CPU/Memory"; accent: #6fe0bd;  go-back => { root.current-app = -1; } }
     if current-app == 8: DemoPage { title: "文件 IO";    accent: #f0bd62;  go-back => { root.current-app = -1; } }
     if current-app == 9: ScreenColorPage { go-back => { root.current-app = -1; } }
-    if current-app == 10: DemoPage { title: "背光控制";  accent: #f0bd62;  go-back => { root.current-app = -1; } }
+    if current-app == 10: BrightnessPage {
+        brightness <=> root.brightness;
+        set-brightness(value) => { root.set-brightness(value); }
+        go-back => { root.current-app = -1; }
+    }
     // 外设 demo pages
     if current-app == 11: WifiScanPage {
         networks: root.networks;

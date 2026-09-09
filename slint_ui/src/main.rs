@@ -23,6 +23,7 @@ mod app_window {
     include!(env!("SLINT_UI_GENERATED"));
 }
 mod background;
+mod brightness;
 mod math;
 mod png_view;
 mod sdcard;
@@ -752,6 +753,7 @@ fn run_slint_ui() -> IoResult<()> {
     });
     let _wifi_scan_timer = wifi::install(&ui);
     let _imu_timer = imu::install(&ui);
+    brightness::install(&ui);
     ui.show()
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
 

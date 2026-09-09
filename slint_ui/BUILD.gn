@@ -29,6 +29,7 @@ action("generate_slint_ui") {
     "ui/components/nav-tab.slint",
     "ui/components/theme.slint",
     "ui/launcher/launcher.slint",
+    "ui/pages/brightness-page.slint",
     "ui/pages/demo-page.slint",
     "ui/pages/sched-mon-page.slint",
     "ui/pages/screen-color-page.slint",
@@ -59,6 +60,7 @@ reload_autoconf_and_build("slint_ui_example") {
   inputs = [
     _slint_ui_generated,
     "resources/background_480x480.rgb565",
+    "src/brightness.rs",
     "src/png_view.rs",
     "src/sdcard.rs",
     "src/imu.rs",
