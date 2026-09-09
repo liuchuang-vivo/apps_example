@@ -89,7 +89,7 @@ export component SdCardPage inherits AppPage {
             height: parent.height;
             text: root.path-text;
             color: Theme.secondary-text;
-            font-size: 9px;
+            font-size: 10px;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -121,7 +121,7 @@ export component SdCardPage inherits AppPage {
             height: 50px;
             text: root.read-error ? "SD 不可用" : "空目录";
             color: root.read-error ? #f08091 : Theme.muted-text;
-            font-size: 21px;
+            font-size: 18px;
             font-weight: 800;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -176,7 +176,7 @@ export component SdCardPage inherits AppPage {
             height: 18px;
             text: entry.is-dir ? "目录" : entry.size-text + (entry.is-image ? "  PNG" : entry.can-open ? "  文本" : "");
             color: Theme.muted-text;
-            font-size: 8px;
+            font-size: 10px;
             vertical-alignment: center;
         }
         Text {
@@ -185,7 +185,7 @@ export component SdCardPage inherits AppPage {
             height: parent.height;
             text: entry.can-open ? "打开" : "";
             color: #f0bd62;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             horizontal-alignment: right;
             vertical-alignment: center;
@@ -215,7 +215,7 @@ export component SdCardPage inherits AppPage {
             height: parent.height;
             text: root.total-count > 0 ? (root.scroll-offset + 1) + "-" + (root.scroll-offset + root.visible-count) + "/" + root.total-count : root.status-text;
             color: Theme.muted-text;
-            font-size: 8px;
+            font-size: 10px;
             horizontal-alignment: left;
             vertical-alignment: center;
             overflow: elide;
@@ -285,7 +285,7 @@ export component SdCardPage inherits AppPage {
             x: 16px; y: 340px; width: 120px; height: 36px;
             text: root.text-page;
             color: Theme.muted-text;
-            font-size: 9px;
+            font-size: 10px;
             horizontal-alignment: left;
             vertical-alignment: center;
         }
@@ -343,7 +343,7 @@ export component SdCardPage inherits AppPage {
             x: 16px; y: 340px; width: 376px; height: 36px;
             text: root.image-status;
             color: Theme.muted-text;
-            font-size: 9px;
+            font-size: 10px;
             horizontal-alignment: left;
             vertical-alignment: center;
         }

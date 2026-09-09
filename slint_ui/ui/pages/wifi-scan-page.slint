@@ -78,7 +78,7 @@ export component WifiScanPage inherits AppPage {
             height: 17px;
             text: root.status-text;
             color: root.scanning ? #d5b95e : Theme.muted-text;
-            font-size: 8px;
+            font-size: 10px;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -101,7 +101,7 @@ export component WifiScanPage inherits AppPage {
             height: 50px;
             text: root.scanning ? "..." : "WI-FI";
             color: root.scanning ? #d5b95e : Theme.muted-text;
-            font-size: root.scanning ? 30px : 25px;
+            font-size: 24px;
             font-weight: 800;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -127,7 +127,7 @@ export component WifiScanPage inherits AppPage {
             height: 20px;
             text: "SSID、信号、信道和安全信息将显示在此处";
             color: Theme.muted-text;
-            font-size: 8px;
+            font-size: 10px;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -156,7 +156,7 @@ export component WifiScanPage inherits AppPage {
                 height: parent.height;
                 text: index + 1;
                 color: #62d4ad;
-                font-size: 8px;
+                font-size: 10px;
                 font-weight: 800;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -183,7 +183,7 @@ export component WifiScanPage inherits AppPage {
             height: 15px;
             text: network.detail;
             color: network.secure ? Theme.secondary-text : #a1832f;
-            font-size: 8px;
+            font-size: 10px;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -224,7 +224,7 @@ export component WifiScanPage inherits AppPage {
             height: parent.height;
             text: network.signal-text;
             color: network.strength >= 3 ? #6fe0b8 : network.strength == 2 ? #d5b95e : #d07d72;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             horizontal-alignment: right;
             vertical-alignment: center;
@@ -255,7 +255,7 @@ export component WifiScanPage inherits AppPage {
             height: 30px;
             text: root.result-count > 6 ? "显示最强 6 个  /  自动刷新: 15 秒" : "信号排序  /  自动刷新: 15 秒";
             color: Theme.muted-text;
-            font-size: 8px;
+            font-size: 10px;
             font-weight: 600;
             vertical-alignment: center;
         }
