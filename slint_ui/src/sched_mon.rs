@@ -113,8 +113,9 @@ fn parse_kb_value(line: &str) -> f32 {
 }
 
 /// Parse a thread status file from /proc/<tid>/status.
-/// Returns (tid_display, kind_abbr, state_abbr, prio_display, full_name).
-#[allow(dead_code)]
+/// Returns (tid_display, kind_abbr, state_abbr, prio_display, typed_name).
+/// PROCFS status provides Name (=thread kind), State, and Priority.
+/// The returned "typed_name" is the human-readable thread kind (e.g. "Idle Task").
 fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, String, String) {
     let text = core::str::from_utf8(content).unwrap_or("");
     let mut kind = "normal";
@@ -142,8 +143,8 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
         _ => "?",
     };
 
-    // Kind abbreviation
-    let kind_abbr = match kind {
+    // Kind abbreviation for compact Type column
+    let type_abbr = match kind {
         "idle" => "idle",
         "normal" => "norm",
         "async_poller" => "poll",
@@ -151,11 +152,20 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
         _ => kind,
     };
 
+    // Human-readable name derived from thread kind
+    let typed_name = match kind {
+        "idle" => "Idle Task",
+        "normal" => "Main",
+        "async_poller" => "Async Poller",
+        "soft_timer" => "Soft Timer",
+        _ => kind,
+    };
+
     // TID: show last 4 hex digits
     let tid_str = format!("{:04X}", tid & 0xFFFF);
     let prio_str = format!("{}", priority);
 
-    (tid_str, kind_abbr.to_string(), state_abbr.to_string(), prio_str, kind.to_string())
+    (tid_str, type_abbr.to_string(), state_abbr.to_string(), prio_str, typed_name.to_string())
 }
 
 /// Read the full content of a file (small, procfs-style).
@@ -181,7 +191,6 @@ fn read_proc_file(path: &[u8]) -> IoResult<Vec<u8>> {
 
 /// List directory entries in /proc (each is a TID directory).
 /// Uses the kernel's dirent layout (which matches libc::dirent64 on 32-bit musl).
-#[allow(dead_code)]
 fn list_proc_entries() -> IoResult<Vec<usize>> {
     let path = CStr::from_bytes_with_nul(b"/proc\0")
         .map_err(|_| Error::from_raw_os_error(libc::EINVAL))?;
@@ -266,24 +275,45 @@ impl SchedMonitor {
     }
 
     fn refresh_task_list(&mut self, ui: &MainWindow) {
-        // TODO: 此处占位，后面改为调节亮度等任务
-        // 当前为演示，填充 4 个占位任务
-        let tids = ["--", "--", "--", "--"];
-        let types_ = ["idle", "norm", "poll", "timer"];
-        let states = ["IDLE", "RDY", "SUS", "RUN"];
-        let prios =  ["0",  "15", "10", "15"];
-        let names =  ["Idle Task", "Main", "Async Poller", "Soft Timer"];
+        let tid_results = match list_proc_entries() {
+            Ok(tids) => tids,
+            Err(_) => return,
+        };
+
         let mut tid_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut type_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut state_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut prio_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut name_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
-        for i in 0..MAX_TASK_LINES {
-            tid_col.push(tids[i].into());
-            type_col.push(types_[i].into());
-            state_col.push(states[i].into());
-            prio_col.push(prios[i].into());
-            name_col.push(names[i].into());
+
+        let n = tid_results.len().min(MAX_TASK_LINES);
+        for i in 0..n {
+            let tid = tid_results[i];
+            let path = format!("/proc/{}/status\0", tid);
+            let (tid_str, kind, state, prio, name) =
+                read_proc_file(path.as_bytes())
+                    .ok()
+                    .and_then(|content| {
+                        let result = parse_thread_status(&content, tid);
+                        Some(result)
+                    })
+                    .unwrap_or_else(|| {
+                        let tid_hex = format!("{:04X}", tid & 0xFFFF);
+                        (tid_hex, "?".into(), "?".into(), "?".into(), "?".into())
+                    });
+            tid_col.push(tid_str.into());
+            type_col.push(kind.into());
+            state_col.push(state.into());
+            prio_col.push(prio.into());
+            name_col.push(name.into());
+        }
+        // Pad remaining rows with placeholder
+        for i in n..MAX_TASK_LINES {
+            tid_col.push("--".into());
+            type_col.push("-".into());
+            state_col.push("-".into());
+            prio_col.push("-".into());
+            name_col.push("-".into());
         }
         ui.set_task_tids(slint::ModelRc::new(slint::VecModel::from(tid_col)));
         ui.set_task_types(slint::ModelRc::new(slint::VecModel::from(type_col)));
