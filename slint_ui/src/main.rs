@@ -16,6 +16,7 @@
 extern crate esp_radio_sys;
 extern crate libm;
 extern crate librs;
+extern crate png;
 extern crate rsrt;
 
 mod app_window {
@@ -23,10 +24,12 @@ mod app_window {
 }
 mod background;
 mod math;
+mod png_view;
+mod sdcard;
 mod wifi;
 
-use crate::background::PanelRgb565Pixel;
 use crate::app_window::MainWindow;
+use crate::background::PanelRgb565Pixel;
 use librs::{c_str::CStr, syscall::Syscall};
 use slint::platform::software_renderer::{LineBufferProvider, RepaintBufferType};
 use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent};
@@ -36,13 +39,20 @@ use std::io::{Error, ErrorKind, Result as IoResult};
 use std::rc::Rc;
 use std::thread;
 
+thread_local! {
+    pub(crate) static PNG_RENDER_STATE: png_view::SharedPngRenderState =
+        Rc::new(RefCell::new(png_view::PngRenderState::default()));
+}
+
 const LCD_H_RES: u16 = 480;
 const LCD_V_RES: u16 = 480;
 const FRAME_DELAY_MS: libc::c_uint = 16;
 const UI_THREAD_STACK_SIZE: usize = 64 * 1024;
-// Keep the 64-row render stripe on the heap. A full RGB565 frame is emitted in
-// eight writes without consuming almost all of the UI thread's 64 KiB stack.
-const RENDER_BATCH_ROWS: usize = 64;
+// Batch sixteen RGB565 rows in the UI thread stack. This bounds renderer
+// scratch space to 15 KiB without consuming heap memory.
+const RENDER_BATCH_ROWS: usize = 16;
+const RGB565_ROW_BYTES: usize = LCD_H_RES as usize * 2;
+const RENDER_BATCH_BYTES: usize = RGB565_ROW_BYTES * RENDER_BATCH_ROWS;
 const TOUCH_REPORT_SIZE: usize = 12;
 const TOUCH_REPORT_VERSION: u8 = 1;
 const TOUCH_DEVICE_PATH: &[u8] = b"/dev/cst9220\0";
@@ -69,7 +79,7 @@ impl PixelFormat {
 }
 
 struct FbFile {
-    fd: libc::c_int,
+    pub(crate) fd: libc::c_int,
     fixed_info: libc::fb_fix_screeninfo,
     variable_info: libc::fb_var_screeninfo,
     pixel_format: PixelFormat,
@@ -325,22 +335,38 @@ impl FbFile {
 struct FbLineBuffer<'a> {
     fb: &'a mut FbFile,
     output: [PanelRgb565Pixel; LCD_H_RES as usize],
-    row_cache: &'a mut Vec<u8>,
+    row_cache: [u8; RENDER_BATCH_BYTES],
     cached_row_start: usize,
     cached_row_count: usize,
     result: &'a mut IoResult<()>,
+    stats: &'a mut FrameRenderStats,
+}
+
+#[derive(Default)]
+struct FrameRenderStats {
+    io_us: u128,
+    full_lines: usize,
+    partial_lines: usize,
+    pixels: usize,
+    full_writes: usize,
+    partial_writes: usize,
+    bytes: usize,
 }
 
 impl<'a> FbLineBuffer<'a> {
-    fn new(fb: &'a mut FbFile, row_cache: &'a mut Vec<u8>, result: &'a mut IoResult<()>) -> Self {
-        row_cache.clear();
+    fn new(
+        fb: &'a mut FbFile,
+        result: &'a mut IoResult<()>,
+        stats: &'a mut FrameRenderStats,
+    ) -> Self {
         Self {
             fb,
             output: [PanelRgb565Pixel(0); LCD_H_RES as usize],
-            row_cache,
+            row_cache: [0; RENDER_BATCH_BYTES],
             cached_row_start: 0,
             cached_row_count: 0,
             result,
+            stats,
         }
     }
 
@@ -350,9 +376,19 @@ impl<'a> FbLineBuffer<'a> {
         }
 
         if self.result.is_ok() {
-            *self.result = self.fb.draw_line(self.row_cache, 0, self.cached_row_start);
+            let byte_count = self.cached_row_count * RGB565_ROW_BYTES;
+            let io_start = uptime_micros();
+            *self.result =
+                self.fb
+                    .draw_line(&self.row_cache[..byte_count], 0, self.cached_row_start);
+            self.stats.io_us += uptime_micros().saturating_sub(io_start);
+            if self.result.is_ok() {
+                self.stats.full_lines += self.cached_row_count;
+                self.stats.pixels += self.cached_row_count * LCD_H_RES as usize;
+                self.stats.full_writes += 1;
+                self.stats.bytes += byte_count;
+            }
         }
-        self.row_cache.clear();
         self.cached_row_count = 0;
     }
 
@@ -367,23 +403,18 @@ impl<'a> FbLineBuffer<'a> {
             self.cached_row_start = line;
         }
 
-        match self.fb.pixel_format {
-            PixelFormat::Rgb565 => {
-                let pixels = &self.output[..LCD_H_RES as usize];
-                // PanelRgb565Pixel is transparent over u16 and every element
-                // was initialized by Slint before this copy.
-                let bytes = unsafe {
-                    core::slice::from_raw_parts(
-                        pixels.as_ptr().cast::<u8>(),
-                        core::mem::size_of_val(pixels),
-                    )
-                };
-                self.row_cache.extend_from_slice(bytes);
-            }
-            PixelFormat::Bgra8888 => {
-                append_bgra8888(self.row_cache, &self.output[..LCD_H_RES as usize]);
-            }
-        }
+        debug_assert!(matches!(self.fb.pixel_format, PixelFormat::Rgb565));
+        let pixels = &self.output[..LCD_H_RES as usize];
+        // PanelRgb565Pixel is transparent over u16 and every element was
+        // initialized by Slint before this copy.
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                pixels.as_ptr().cast::<u8>(),
+                core::mem::size_of_val(pixels),
+            )
+        };
+        let offset = self.cached_row_count * RGB565_ROW_BYTES;
+        self.row_cache[offset..offset + RGB565_ROW_BYTES].copy_from_slice(bytes);
         self.cached_row_count += 1;
         if self.cached_row_count == RENDER_BATCH_ROWS {
             self.flush_rows();
@@ -406,11 +437,13 @@ impl LineBufferProvider for FbLineBuffer<'_> {
     ) {
         let pixel_count = range.len();
         debug_assert!(pixel_count <= self.output.len());
-        let is_full_width = range.start == 0 && pixel_count == LCD_H_RES as usize;
+        let can_batch = matches!(self.fb.pixel_format, PixelFormat::Rgb565)
+            && range.start == 0
+            && pixel_count == LCD_H_RES as usize;
 
         // Partial rows have a framebuffer stride between them and cannot be
         // represented by the same compact write as consecutive full rows.
-        if !is_full_width {
+        if !can_batch {
             self.flush_rows();
         }
 
@@ -419,7 +452,7 @@ impl LineBufferProvider for FbLineBuffer<'_> {
         render_fn(pixels);
 
         if self.result.is_ok() {
-            if is_full_width {
+            if can_batch {
                 self.cache_full_line(line);
             } else {
                 match self.fb.pixel_format {
@@ -430,13 +463,31 @@ impl LineBufferProvider for FbLineBuffer<'_> {
                                 core::mem::size_of_val(pixels),
                             )
                         };
+                        let io_start = uptime_micros();
                         *self.result = self.fb.draw_line(bytes, range.start, line);
+                        self.stats.io_us += uptime_micros().saturating_sub(io_start);
+                        if self.result.is_ok() {
+                            self.stats.partial_lines += 1;
+                            self.stats.pixels += pixel_count;
+                            self.stats.partial_writes += 1;
+                            self.stats.bytes += bytes.len();
+                        }
                     }
                     PixelFormat::Bgra8888 => {
-                        self.row_cache.clear();
-                        append_bgra8888(self.row_cache, pixels);
-                        *self.result = self.fb.draw_line(self.row_cache, range.start, line);
-                        self.row_cache.clear();
+                        let byte_count = encode_bgra8888(&mut self.row_cache, pixels);
+                        let io_start = uptime_micros();
+                        *self.result = self.fb.draw_line(
+                            &self.row_cache[..byte_count],
+                            range.start,
+                            line,
+                        );
+                        self.stats.io_us += uptime_micros().saturating_sub(io_start);
+                        if self.result.is_ok() {
+                            self.stats.partial_lines += 1;
+                            self.stats.pixels += pixel_count;
+                            self.stats.partial_writes += 1;
+                            self.stats.bytes += byte_count;
+                        }
                     }
                 }
             }
@@ -450,14 +501,17 @@ impl Drop for FbLineBuffer<'_> {
     }
 }
 
-fn append_bgra8888(bytes: &mut Vec<u8>, pixels: &[PanelRgb565Pixel]) {
-    for pixel in pixels {
+fn encode_bgra8888(bytes: &mut [u8], pixels: &[PanelRgb565Pixel]) -> usize {
+    let byte_count = pixels.len() * 4;
+    debug_assert!(byte_count <= bytes.len());
+    for (pixel, output) in pixels.iter().zip(bytes[..byte_count].chunks_exact_mut(4)) {
         let rgb = u16::from_be(pixel.0);
-        bytes.push(((rgb & 0x001f) << 3) as u8);
-        bytes.push(((rgb & 0x07e0) >> 3) as u8);
-        bytes.push(((rgb & 0xf800) >> 8) as u8);
-        bytes.push(0xff);
+        output[0] = ((rgb & 0x001f) << 3) as u8;
+        output[1] = ((rgb & 0x07e0) >> 3) as u8;
+        output[2] = ((rgb & 0xf800) >> 8) as u8;
+        output[3] = 0xff;
     }
+    byte_count
 }
 
 impl Drop for FbFile {
@@ -534,6 +588,19 @@ fn uptime_millis() -> u128 {
     (ts.tv_sec as u128) * 1000 + (ts.tv_nsec as u128) / 1_000_000
 }
 
+fn uptime_micros() -> u128 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    let ret = unsafe { librs::time::clock_gettime(librs::time::CLOCK_MONOTONIC, &mut ts) };
+    if ret != 0 {
+        return 0;
+    }
+    (ts.tv_sec as u128) * 1_000_000 + (ts.tv_nsec as u128) / 1_000
+}
+
+
 struct BluekernelBackend {
     window: RefCell<Option<Rc<slint::platform::software_renderer::MinimalSoftwareWindow>>>,
 }
@@ -565,9 +632,6 @@ impl slint::platform::Platform for BluekernelBackend {
 
     fn run_event_loop(&self) -> Result<(), slint::PlatformError> {
         let mut fb = FbFile::open().map_err(|err| slint::PlatformError::Other(err.to_string()))?;
-        let cache_capacity =
-            LCD_H_RES as usize * RENDER_BATCH_ROWS * fb.pixel_format.bytes_per_pixel() as usize;
-        let mut render_row_cache = Vec::with_capacity(cache_capacity);
         let mut touch = match TouchFile::open() {
             Ok(touch) => Some(touch),
             Err(error) => {
@@ -576,6 +640,7 @@ impl slint::platform::Platform for BluekernelBackend {
             }
         };
         let mut touch_error_reported = false;
+        let mut frame_number = 0u64;
 
         loop {
             slint::platform::update_timers_and_animations();
@@ -596,16 +661,75 @@ impl slint::platform::Platform for BluekernelBackend {
 
                 let has_animations = window.window().has_active_animations();
                 let mut draw_result = Ok(());
-                window.draw_if_needed(|renderer| {
-                    // Render line-by-line to avoid a full-frame RGB565 allocation. This saves
-                    // substantial SRAM, at the cost of not supporting Slint `Path` items.
-                    renderer.render_by_line(FbLineBuffer::new(
-                        &mut fb,
-                        &mut render_row_cache,
-                        &mut draw_result,
-                    ));
+                let mut frame_stats = FrameRenderStats::default();
+                let draw_start = uptime_micros();
+
+                // A pending request must first let Slint draw the viewer chrome.
+                // Once the PNG pixels are written, suspend Slint until the viewer
+                // closes so it cannot overwrite the direct framebuffer content.
+                let png_active = PNG_RENDER_STATE.with(|state| {
+                    let state = state.borrow();
+                    state.active && state.pending.is_none()
                 });
+                let redrawn = if !png_active {
+                    window.draw_if_needed(|renderer| {
+                        // Render line-by-line to avoid a full-frame RGB565 allocation. This saves
+                        // substantial SRAM, at the cost of not supporting Slint `Path` items.
+                        renderer.render_by_line(FbLineBuffer::new(
+                            &mut fb,
+                            &mut draw_result,
+                            &mut frame_stats,
+                        ));
+                    })
+                } else {
+                    // Keep the window dirty so Slint processes input events even
+                    // when the software renderer is suspended for the PNG overlay.
+                    window.window().request_redraw();
+                    false
+                };
+
+                let total_us = uptime_micros().saturating_sub(draw_start);
                 draw_result.map_err(|err| slint::PlatformError::Other(err.to_string()))?;
+                if redrawn {
+                    frame_number += 1;
+                    println!(
+                        "[SLINT_STATS] mode=rgb565-bg/stack16 frame={} total_us={} io_us={} cpu_us={} lines={}/{} pixels={} writes={}/{} bytes={}",
+                        frame_number,
+                        total_us,
+                        frame_stats.io_us,
+                        total_us.saturating_sub(frame_stats.io_us),
+                        frame_stats.full_lines,
+                        frame_stats.partial_lines,
+                        frame_stats.pixels,
+                        frame_stats.full_writes,
+                        frame_stats.partial_writes,
+                        frame_stats.bytes,
+                    );
+                }
+
+                // After Slint finishes drawing its overlay (the image viewer frame),
+                // check for a pending PNG render request and stream it to the
+                // framebuffer.
+                PNG_RENDER_STATE.with(|state| {
+                    let mut s = state.borrow_mut();
+                    if let Some(request) = s.pending.take() {
+                        drop(s);
+                        println!(
+                            "[PNG] rendering {}x{} -> {}x{}: {}",
+                            request.source_width,
+                            request.source_height,
+                            request.display_width,
+                            request.display_height,
+                            request.path
+                        );
+                        if let Err(error) = png_view::render_png_to_framebuffer(&mut fb, &request) {
+                            println!("[PNG] render error: {error}");
+                            state.borrow_mut().active = false;
+                        } else {
+                            state.borrow_mut().active = true;
+                        }
+                    }
+                });
 
                 let delay = if has_animations { FRAME_DELAY_MS } else { 30 };
                 let _ = librs::time::msleep(delay);
@@ -622,6 +746,9 @@ fn run_slint_ui() -> IoResult<()> {
     slint::platform::set_platform(Box::new(BluekernelBackend::new()))
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
     let ui = MainWindow::new().map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
+    PNG_RENDER_STATE.with(|state| {
+        sdcard::install(&ui, state.clone());
+    });
     let _wifi_scan_timer = wifi::install(&ui);
     ui.show()
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
