@@ -192,7 +192,6 @@ fn list_proc_entries() -> IoResult<Vec<usize>> {
 
     // Read directory entries using getdents
     let mut buf = [0u8; 512];
-    let mut total_n = 0;
     let mut tids = Vec::new();
     loop {
         let n = match librs::syscall::sys::Sys::getdents(fd, &mut buf) {
@@ -246,7 +245,6 @@ fn list_proc_entries() -> IoResult<Vec<usize>> {
             offset += reclen;
         }
     }
-    println!("[SCHED] getdents total bytes={}, tids={:?}", total_n, tids);
     let _ = librs::syscall::sys::Sys::close(fd);
 
     // Sort by TID
@@ -292,7 +290,6 @@ impl SchedMonitor {
         ui.set_task_states(slint::ModelRc::new(slint::VecModel::from(state_col)));
         ui.set_task_prios(slint::ModelRc::new(slint::VecModel::from(prio_col)));
         ui.set_task_names(slint::ModelRc::new(slint::VecModel::from(name_col)));
-        println!("[SCHED] task list refreshed (placeholder)");
     }
 
     fn tick(&mut self, ui: &MainWindow) {
@@ -350,9 +347,7 @@ impl SchedMonitor {
 /// Connect the scheduler monitor to the shared launcher window. The returned
 /// timer must stay alive for as long as the Slint event loop runs.
 pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
-    println!("[SCHED] install() called");
     let monitor = Rc::new(RefCell::new(SchedMonitor::new()));
-    println!("[SCHED] monitor created, starting timer...");
 
     // Bind the refresh-tasks callback from the Slint UI.
     {
