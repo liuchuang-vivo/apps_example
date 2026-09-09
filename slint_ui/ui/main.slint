@@ -47,6 +47,7 @@ export component MainWindow inherits Window {
     in property <[string]> task-states;
     in property <[string]> task-prios;
     in property <[string]> task-names;
+    in property <int> task-hidden: 0;
     callback refresh-tasks();
 
     in-out property <string> accel-x: "---";
@@ -112,6 +113,7 @@ export component MainWindow inherits Window {
         task-states <=> root.task-states;
         task-prios <=> root.task-prios;
         task-names <=> root.task-names;
+        task-hidden <=> root.task-hidden;
         refresh-tasks => { root.refresh-tasks(); }
         go-back => { root.current-app = -1; }
     }

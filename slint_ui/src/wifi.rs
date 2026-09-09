@@ -343,11 +343,9 @@ impl WifiScanner {
         self.page_active = active;
         if active {
             self.request_scan(ui);
-        } else {
-            // Cancel a scan that was requested but has not started yet. An
-            // in-flight driver scan is allowed to finish, then remains idle.
-            self.scan_requested = false;
         }
+        // When the Wi-Fi page is left, scanning stops until the user
+        // re-opens it.
     }
 
     fn request_scan(&mut self, ui: &MainWindow) {
@@ -396,9 +394,10 @@ impl WifiScanner {
         let now = uptime_millis();
         match self.state {
             WifiScanState::Idle => {
-                if !self.scan_requested
-                    && (!self.page_active || now < self.next_auto_scan_at)
-                {
+                if !self.page_active {
+                    return;
+                }
+                if !self.scan_requested && now < self.next_auto_scan_at {
                     return;
                 }
                 self.start_scan(ui, now);

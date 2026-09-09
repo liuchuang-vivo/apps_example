@@ -764,7 +764,6 @@ fn run_slint_ui() -> IoResult<()> {
 
 fn main() -> IoResult<()> {
     let ui_thread = thread::Builder::new()
-        .name("slint-ui".to_string())
         .stack_size(UI_THREAD_STACK_SIZE)
         .spawn(run_slint_ui)?;
 

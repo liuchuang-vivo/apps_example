@@ -13,9 +13,6 @@
 // limitations under the License.
 
 // QMI8658 IMU sensor data poller for the ImuPage.
-// Follows the wifi.rs pattern: a slint::Timer drives tick() on the UI thread,
-// state lives in an Rc<RefCell<..>>, and the window is reached via Weak. No
-// thread_local and no background thread.
 
 use crate::app_window::MainWindow;
 use crate::syscall_error;
@@ -195,7 +192,7 @@ impl ImuPoller {
     }
 
     fn tick(&mut self, ui: &MainWindow) {
-        // Only poll when the IMU page (app 12) is active
+        // Skip IMU reads when the IMU page is not active.
         if ui.get_current_app() != 12 {
             return;
         }

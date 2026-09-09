@@ -16,14 +16,12 @@ export component SchedMonPage inherits AppPage {
     in property <[string]> task-states;
     in property <[string]> task-prios;
     in property <[string]> task-names;
+    in property <int> task-hidden: 0;
     callback refresh-tasks();
 
     title: "调度与监控";
     accent: #5ca9ff;
     subtitle: "CPU / 内存 / 任务";
-
-    // Connect the action button (top bar) to refresh-tasks
-    action-text: "重放";
 
     // ====== 1. 监控卡片（CPU + 内存合并在同一张卡片内）======
     Rectangle {
@@ -93,7 +91,7 @@ export component SchedMonPage inherits AppPage {
         Text { x: 198px; y: 42px; width: 56px;  height: 16px; text: "优先级"; color: Theme.muted-text; font-size: 10px; font-weight: 700; }
         Text { x: 256px; y: 42px; width: 168px; height: 16px; text: "名称";   color: Theme.muted-text; font-size: 10px; font-weight: 700; }
 
-        // Task rows — 4 rows, each 18px tall
+        // Task rows — 8 rows, each 18px tall
         for idx in 4 : Rectangle {
             x: 16px; y: 60px + idx * 18px;
             width: 408px; height: 16px;
@@ -103,6 +101,14 @@ export component SchedMonPage inherits AppPage {
             Text { x: 120px; width: 60px;  height: parent.height; text: root.task-states[idx]; color: Theme.secondary-text; font-size: 10px; font-weight: 600; vertical-alignment: center; }
             Text { x: 182px; width: 56px;  height: parent.height; text: root.task-prios[idx];  color: Theme.secondary-text; font-size: 10px; font-weight: 600; vertical-alignment: center; }
             Text { x: 240px; width: 168px; height: parent.height; text: root.task-names[idx];  color: Theme.secondary-text; font-size: 10px; font-weight: 600; vertical-alignment: center; }
+        }
+
+        // "省略 xx 个任务" — bottom of the card
+        Text {
+            x: 16px; y: 136px; width: 408px; height: 16px;
+            visible: root.task-hidden > 0;
+            text: "还有 " + root.task-hidden + " 个任务";
+            color: Theme.muted-text; font-size: 10px; font-weight: 400;
         }
     }
 }

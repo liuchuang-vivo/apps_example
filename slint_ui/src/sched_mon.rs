@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Scheduler and resource monitor backend.
-// Polls /proc/stat, /proc/meminfo, and /proc/<tid>/status on the UI thread
+// Polls /proc/stat, /proc/meminfo, and /proc/0/task/<tid>/status on the UI thread
 // via a repeating slint::Timer, following the imu.rs pattern.
 
 use crate::app_window::MainWindow;
@@ -113,9 +113,6 @@ fn parse_kb_value(line: &str) -> f32 {
 }
 
 /// Parse a thread status file from /proc/<tid>/status.
-/// Returns (tid_display, kind_abbr, state_abbr, prio_display, typed_name).
-/// PROCFS status provides Name (=thread kind), State, and Priority.
-/// The returned "typed_name" is the human-readable thread kind (e.g. "Idle Task").
 fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, String, String) {
     let text = core::str::from_utf8(content).unwrap_or("");
     let mut kind = "normal";
@@ -143,7 +140,8 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
         _ => "?",
     };
 
-    // Kind abbreviation for compact Type column
+    // Known fallback names identify system thread kinds. Any other value is a
+    // custom name on a normal thread.
     let type_abbr = match kind {
         "idle" => "idle",
         "normal" => "norm",
@@ -152,10 +150,10 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
         _ => kind,
     };
 
-    // Human-readable name derived from thread kind
+    // Expand fallback kind names, but preserve custom names verbatim.
     let typed_name = match kind {
         "idle" => "Idle Task",
-        "normal" => "Main",
+        "normal" => "Normal",
         "async_poller" => "Async Poller",
         "soft_timer" => "Soft Timer",
         _ => kind,
@@ -165,13 +163,20 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
     let tid_str = format!("{:04X}", tid & 0xFFFF);
     let prio_str = format!("{}", priority);
 
-    (tid_str, type_abbr.to_string(), state_abbr.to_string(), prio_str, typed_name.to_string())
+    (
+        tid_str,
+        type_abbr.to_string(),
+        state_abbr.to_string(),
+        prio_str,
+        typed_name.to_string(),
+    )
 }
 
 /// Read the full content of a file (small, procfs-style).
 fn read_proc_file(path: &[u8]) -> IoResult<Vec<u8>> {
-    let c_path = CStr::from_bytes_with_nul(path)
-        .map_err(|_| Error::from_raw_os_error(libc::EINVAL))?;
+    // Use from_bytes_until_nul to tolerate trailing zero bytes in the buffer.
+    let c_path =
+        CStr::from_bytes_until_nul(path).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?;
     let fd = librs::syscall::sys::Sys::open(c_path, libc::O_RDONLY, 0);
     if fd < 0 {
         return Err(syscall_error(fd));
@@ -189,10 +194,41 @@ fn read_proc_file(path: &[u8]) -> IoResult<Vec<u8>> {
     Ok(buf[..n].to_vec())
 }
 
-/// List directory entries in /proc (each is a TID directory).
+/// Build a null-terminated /proc/0/task/<tid>/status path.
+/// The "0" pid is a placeholder — BlueOS does not have a process concept yet.
+/// Path aligns with Linux /proc/<pid>/task/<tid>/status layout.
+/// The returned buffer always ends with \0 and fits in 64 bytes.
+fn path_for_task_status(tid: usize) -> [u8; 64] {
+    let mut buf = [0u8; 64];
+    let prefix = b"/proc/0/task/";
+    buf[..prefix.len()].copy_from_slice(prefix);
+    let mut pos = prefix.len();
+    if tid == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 12];
+        let mut n = tid;
+        let mut nd = 0;
+        while n > 0 {
+            digits[nd] = b'0' + (n % 10) as u8;
+            n /= 10;
+            nd += 1;
+        }
+        for i in 0..nd {
+            buf[pos + i] = digits[nd - 1 - i];
+        }
+        pos += nd;
+    }
+    buf[pos..pos + 8].copy_from_slice(b"/status\0");
+    buf
+}
+
+/// List directory entries in /proc/0/task/ (each is a TID directory).
+/// The "0" pid is a placeholder — BlueOS does not have a process concept yet.
 /// Uses the kernel's dirent layout (which matches libc::dirent64 on 32-bit musl).
-fn list_proc_entries() -> IoResult<Vec<usize>> {
-    let path = CStr::from_bytes_with_nul(b"/proc\0")
+fn list_task_entries() -> IoResult<Vec<usize>> {
+    let path = CStr::from_bytes_with_nul(b"/proc/0/task\0")
         .map_err(|_| Error::from_raw_os_error(libc::EINVAL))?;
     let fd = librs::syscall::sys::Sys::open(path, libc::O_RDONLY | libc::O_DIRECTORY, 0);
     if fd < 0 {
@@ -227,17 +263,15 @@ fn list_proc_entries() -> IoResult<Vec<usize>> {
 
         let mut offset: usize = 0;
         while offset + NAME_OFFSET <= n {
-            let reclen = u16::from_le_bytes(
-                buf[offset + 8..offset + 10].try_into().unwrap(),
-            ) as usize;
+            let reclen =
+                u16::from_le_bytes(buf[offset + 8..offset + 10].try_into().unwrap()) as usize;
             if reclen < NAME_OFFSET + 1 || offset + reclen > n {
                 break;
             }
 
             let d_type = buf[offset + 10];
-            let namlen = u16::from_le_bytes(
-                buf[offset + 12..offset + 14].try_into().unwrap(),
-            ) as usize;
+            let namlen =
+                u16::from_le_bytes(buf[offset + 12..offset + 14].try_into().unwrap()) as usize;
 
             let name_len = namlen.min(reclen.saturating_sub(NAME_OFFSET + 1));
             let name_bytes = &buf[offset + NAME_OFFSET..offset + NAME_OFFSET + name_len];
@@ -261,6 +295,15 @@ fn list_proc_entries() -> IoResult<Vec<usize>> {
     Ok(tids)
 }
 
+struct TaskEntry {
+    tid_disp: String,
+    type_abbr: String,
+    state_abbr: String,
+    state: String, // full State string for sorting
+    prio_str: String,
+    typed_name: String,
+}
+
 struct SchedMonitor {
     prev_ticks: Vec<CpuTickSnapshot>,
     first_stat: bool,
@@ -275,30 +318,96 @@ impl SchedMonitor {
     }
 
     fn refresh_task_list(&mut self, ui: &MainWindow) {
-        // TODO: 后接接入 /proc/<tid>/status 真实读取
-        // 当前使用占位数据演示
-        let tids = ["0001", "0002", "0003", "0004"];
-        let types_ = ["idle", "norm", "poll", "timer"];
-        let states = ["IDLE", "RUN", "RDY", "SUS"];
-        let prios =  ["0",  "15", "10", "15"];
-        let names =  ["Idle Task", "Main", "Async Poller", "Soft Timer"];
+        // List ALL thread TIDs
+        let tids = match list_task_entries() {
+            Ok(tids) => tids,
+            Err(e) => {
+                return;
+            }
+        };
+
+        // Collect status for all threads
+        let mut entries: Vec<TaskEntry> = Vec::with_capacity(tids.len());
+        let mut kind_counts: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+
+        for &tid in &tids {
+            let path = path_for_task_status(tid);
+            let (tid_str, type_abbr, state_abbr, prio_str, typed_name) =
+                if let Ok(content) = read_proc_file(&path) {
+                    parse_thread_status(&content, tid)
+                } else {
+                    (
+                        format!("{:04X}", tid & 0xFFFF),
+                        "?".into(),
+                        "?".into(),
+                        "?".into(),
+                        "?".into(),
+                    )
+                };
+            // Read raw state for sort key
+            let state_raw = if let Ok(content) = read_proc_file(&path) {
+                let text = core::str::from_utf8(&content).unwrap_or("");
+                text.lines()
+                    .find_map(|l| l.trim().strip_prefix("State:"))
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+
+            let name_for_count = typed_name.clone();
+
+            *kind_counts.entry(name_for_count).or_insert(0) += 1;
+
+            entries.push(TaskEntry {
+                tid_disp: tid_str,
+                type_abbr,
+                state_abbr,
+                state: state_raw,
+                prio_str,
+                typed_name,
+            });
+        }
+
+        // Sort: running first, then ready, then others; stable to preserve TID order for ties.
+        entries.sort_by_key(|e| match e.state.as_str() {
+            "running" => 0,
+            "ready" => 1,
+            _ => 2,
+        });
+
+        // Take top MAX_TASK_LINES (no dedup — threads with custom names are
+        // all distinct anyway, and same-type threads are still worth showing).
         let mut tid_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut type_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut state_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut prio_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut name_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
-        for i in 0..MAX_TASK_LINES {
-            tid_col.push(tids[i].into());
-            type_col.push(types_[i].into());
-            state_col.push(states[i].into());
-            prio_col.push(prios[i].into());
-            name_col.push(names[i].into());
+
+        for entry in entries.iter().take(MAX_TASK_LINES) {
+            tid_col.push(entry.tid_disp.clone().into());
+            type_col.push(entry.type_abbr.clone().into());
+            state_col.push(entry.state_abbr.clone().into());
+            prio_col.push(entry.prio_str.clone().into());
+            name_col.push(entry.typed_name.clone().into());
         }
+
+        // Fill remaining rows if fewer than MAX_TASK_LINES
+        while tid_col.len() < MAX_TASK_LINES {
+            tid_col.push("".into());
+            type_col.push("".into());
+            state_col.push("".into());
+            prio_col.push("".into());
+            name_col.push("".into());
+        }
+
         ui.set_task_tids(slint::ModelRc::new(slint::VecModel::from(tid_col)));
         ui.set_task_types(slint::ModelRc::new(slint::VecModel::from(type_col)));
         ui.set_task_states(slint::ModelRc::new(slint::VecModel::from(state_col)));
         ui.set_task_prios(slint::ModelRc::new(slint::VecModel::from(prio_col)));
         ui.set_task_names(slint::ModelRc::new(slint::VecModel::from(name_col)));
+        ui.set_task_hidden(tids.len().saturating_sub(MAX_TASK_LINES) as i32);
     }
 
     fn tick(&mut self, ui: &MainWindow) {
@@ -306,6 +415,10 @@ impl SchedMonitor {
         if ui.get_current_app() != 6 {
             return;
         }
+        println!("[SCHED] tick fired");
+
+        // ---- Task list ----
+        self.refresh_task_list(ui);
 
         // ---- CPU usage ----
         if let Ok(stat_content) = read_proc_file(b"/proc/stat\0") {
@@ -314,8 +427,12 @@ impl SchedMonitor {
                 // Calculate deltas
                 let mut cpu_pcts: Vec<f32> = Vec::with_capacity(CORE_COUNT);
                 for i in 0..current_ticks.len() {
-                    let d_total = current_ticks[i].system.saturating_sub(self.prev_ticks[i].system);
-                    let d_idle = current_ticks[i].idle.saturating_sub(self.prev_ticks[i].idle);
+                    let d_total = current_ticks[i]
+                        .system
+                        .saturating_sub(self.prev_ticks[i].system);
+                    let d_idle = current_ticks[i]
+                        .idle
+                        .saturating_sub(self.prev_ticks[i].idle);
                     if d_total > 0 {
                         let pct = (d_total - d_idle) as f32 / d_total as f32 * 100.0;
                         cpu_pcts.push(pct.min(100.0));
