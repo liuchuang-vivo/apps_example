@@ -192,6 +192,7 @@ fn list_proc_entries() -> IoResult<Vec<usize>> {
 
     // Read directory entries using getdents
     let mut buf = [0u8; 512];
+    let mut total_n = 0;
     let mut tids = Vec::new();
     loop {
         let n = match librs::syscall::sys::Sys::getdents(fd, &mut buf) {
