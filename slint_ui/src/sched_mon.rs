@@ -275,45 +275,24 @@ impl SchedMonitor {
     }
 
     fn refresh_task_list(&mut self, ui: &MainWindow) {
-        let tid_results = match list_proc_entries() {
-            Ok(tids) => tids,
-            Err(_) => return,
-        };
-
+        // TODO: 后接接入 /proc/<tid>/status 真实读取
+        // 当前使用占位数据演示
+        let tids = ["0001", "0002", "0003", "0004"];
+        let types_ = ["idle", "norm", "poll", "timer"];
+        let states = ["IDLE", "RUN", "RDY", "SUS"];
+        let prios =  ["0",  "15", "10", "15"];
+        let names =  ["Idle Task", "Main", "Async Poller", "Soft Timer"];
         let mut tid_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut type_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut state_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut prio_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut name_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
-
-        let n = tid_results.len().min(MAX_TASK_LINES);
-        for i in 0..n {
-            let tid = tid_results[i];
-            let path = format!("/proc/{}/status\0", tid);
-            let (tid_str, kind, state, prio, name) =
-                read_proc_file(path.as_bytes())
-                    .ok()
-                    .and_then(|content| {
-                        let result = parse_thread_status(&content, tid);
-                        Some(result)
-                    })
-                    .unwrap_or_else(|| {
-                        let tid_hex = format!("{:04X}", tid & 0xFFFF);
-                        (tid_hex, "?".into(), "?".into(), "?".into(), "?".into())
-                    });
-            tid_col.push(tid_str.into());
-            type_col.push(kind.into());
-            state_col.push(state.into());
-            prio_col.push(prio.into());
-            name_col.push(name.into());
-        }
-        // Pad remaining rows with placeholder
-        for i in n..MAX_TASK_LINES {
-            tid_col.push("--".into());
-            type_col.push("-".into());
-            state_col.push("-".into());
-            prio_col.push("-".into());
-            name_col.push("-".into());
+        for i in 0..MAX_TASK_LINES {
+            tid_col.push(tids[i].into());
+            type_col.push(types_[i].into());
+            state_col.push(states[i].into());
+            prio_col.push(prios[i].into());
+            name_col.push(names[i].into());
         }
         ui.set_task_tids(slint::ModelRc::new(slint::VecModel::from(tid_col)));
         ui.set_task_types(slint::ModelRc::new(slint::VecModel::from(type_col)));
