@@ -306,23 +306,23 @@ fn show_scan_result(ui: &MainWindow, result: IoResult<WifiScanResults>) {
             replace_network_rows(ui, visible);
             ui.set_result_count(results.total_count as i32);
             if results.total_count == 0 {
-                ui.set_status_text("Scan completed; no access points found".into());
+                ui.set_status_text("扫描完成，未发现接入点".into());
             } else if results.total_count > MAX_VISIBLE_NETWORKS {
                 ui.set_status_text(
                     format!(
-                        "Found {} networks; showing the strongest {}",
+                        "发现 {} 个网络，显示最强的 {} 个",
                         results.total_count, MAX_VISIBLE_NETWORKS
                     )
                     .into(),
                 );
             } else {
-                ui.set_status_text(format!("Found {} nearby networks", results.total_count).into());
+                ui.set_status_text(format!("发现 {} 个附近网络", results.total_count).into());
             }
         }
         Err(error) => {
             replace_network_rows(ui, Vec::new());
             ui.set_result_count(0);
-            ui.set_status_text(format!("Scan failed: {error}").into());
+            ui.set_status_text(format!("扫描失败: {error}").into());
         }
     }
 }
@@ -357,7 +357,7 @@ impl WifiScanner {
 
         self.scan_requested = true;
         ui.set_scanning(true);
-        ui.set_status_text("Scan requested".into());
+        ui.set_status_text("请求扫描".into());
     }
 
     fn finish_scan(&mut self, ui: &MainWindow, result: IoResult<WifiScanResults>) {
@@ -369,7 +369,7 @@ impl WifiScanner {
     fn start_scan(&mut self, ui: &MainWindow, now: u128) {
         self.scan_requested = false;
         ui.set_scanning(true);
-        ui.set_status_text("Scanning channels 1 through 13".into());
+        ui.set_status_text("扫描信道 1 至 13".into());
 
         if self.socket.is_none() {
             match SocketFd::open_for_wifi_scan() {
