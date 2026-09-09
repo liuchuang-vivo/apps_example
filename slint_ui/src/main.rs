@@ -27,6 +27,7 @@ mod math;
 mod png_view;
 mod sdcard;
 mod wifi;
+mod imu;
 
 use crate::app_window::MainWindow;
 use crate::background::PanelRgb565Pixel;
@@ -750,6 +751,7 @@ fn run_slint_ui() -> IoResult<()> {
         sdcard::install(&ui, state.clone());
     });
     let _wifi_scan_timer = wifi::install(&ui);
+    let _imu_timer = imu::install(&ui);
     ui.show()
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
 

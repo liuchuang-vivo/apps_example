@@ -9,6 +9,7 @@ import { SchedMonPage } from "./pages/sched-mon-page.slint";
 import { ScreenColorPage } from "./pages/screen-color-page.slint";
 import { SdCardPage, SdFileEntry } from "./pages/sd-card-page.slint";
 import { WifiScanPage, WifiNetwork } from "./pages/wifi-scan-page.slint";
+import { ImuPage } from "./pages/imu-page.slint";
 import "../../slint_sdcard/assets/website-text.ttf";
 import { WebsiteGlyphs } from "../../slint_sdcard/assets/website-glyphs.slint";
 
@@ -18,7 +19,7 @@ export component MainWindow inherits Window {
     background: transparent;
     default-font-size: 11px;
 
-    property <int> current-app: -1;  // -1 = launcher, 6+ = app pages
+    in-out property <int> current-app: -1;  // -1 = launcher, 6+ = app pages
     property <int> current-tab: 0;   // 0 = 内核, 1 = 外设
     property <float> tab-offset: 0.0;
 
@@ -28,6 +29,13 @@ export component MainWindow inherits Window {
     in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
     callback wifi-page-active-changed(bool);
+
+    in-out property <string> accel-x: "---";
+    in-out property <string> accel-y: "---";
+    in-out property <string> accel-z: "---";
+    in-out property <string> gyro-x: "---";
+    in-out property <string> gyro-y: "---";
+    in-out property <string> gyro-z: "---";
 
     in property <[SdFileEntry]> sd-entries;
     in-out property <string> sd-path-text: "/data";
@@ -87,7 +95,15 @@ export component MainWindow inherits Window {
         scan-requested => { root.scan-requested(); }
         go-back => { root.current-app = -1; }
     }
-    if current-app == 12: DemoPage { title: "IMU Sensors"; accent: #f08091; go-back => { root.current-app = -1; } }
+    if current-app == 12: ImuPage {
+        accel-x <=> root.accel-x;
+        accel-y <=> root.accel-y;
+        accel-z <=> root.accel-z;
+        gyro-x <=> root.gyro-x;
+        gyro-y <=> root.gyro-y;
+        gyro-z <=> root.gyro-z;
+        go-back => { root.current-app = -1; }
+    }
     if current-app == 13: SdCardPage {
         entries: root.sd-entries;
         path-text <=> root.sd-path-text;

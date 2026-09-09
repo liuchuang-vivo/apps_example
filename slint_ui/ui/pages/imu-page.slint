@@ -1,0 +1,61 @@
+// IMU sensor data page (QMI8658 accelerometer + gyroscope).
+// Compatible with SoftwareRenderer::render_by_line: no Path items.
+
+import { AppPage } from "../components/app-page.slint";
+import { Theme } from "../components/theme.slint";
+
+export component ImuPage inherits AppPage {
+    in property <string> accel-x: "---";
+    in property <string> accel-y: "---";
+    in property <string> accel-z: "---";
+    in property <string> gyro-x: "---";
+    in property <string> gyro-y: "---";
+    in property <string> gyro-z: "---";
+
+    title: "IMU 传感器";
+    accent: #f08091;
+    subtitle: "QMI8658 六轴惯性测量单元";
+
+    // ====== 加速度计卡片（X Y Z 纵向排列） ======
+
+    Rectangle {
+        x: 20px; y: 92px;
+        width: 440px; height: 150px;
+        background: Theme.card-background;
+        border-width: 1px; border-color: Theme.border-color; border-radius: 12px;
+
+        Rectangle { x: 16px; y: 14px; width: 6px; height: 18px; background: #f08091; border-radius: 3px; }
+        Text { x: 30px; y: 10px; width: 200px; height: 26px; text: "加速度计  m/s²"; color: #f08091; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+
+        // X: 标签 + 数值
+        Text { x: 16px; y: 48px; width: 28px; height: 28px; text: "X"; color: #fca5a5; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 48px; width: 370px; height: 28px; text: root.accel-x; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+
+        Text { x: 16px; y: 80px; width: 28px; height: 28px; text: "Y"; color: #86efac; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 80px; width: 370px; height: 28px; text: root.accel-y; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+
+        Text { x: 16px; y: 112px; width: 28px; height: 28px; text: "Z"; color: #93c5fd; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 112px; width: 370px; height: 28px; text: root.accel-z; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+    }
+
+    // ====== 陀螺仪卡片（X Y Z 纵向排列） ======
+
+    Rectangle {
+        x: 20px; y: 250px;
+        width: 440px; height: 150px;
+        background: Theme.card-background;
+        border-width: 1px; border-color: Theme.border-color; border-radius: 12px;
+
+        Rectangle { x: 16px; y: 14px; width: 6px; height: 18px; background: #6fe0bd; border-radius: 3px; }
+        Text { x: 30px; y: 10px; width: 200px; height: 26px; text: "陀螺仪  °/s"; color: #6fe0bd; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+
+        Text { x: 16px; y: 48px; width: 28px; height: 28px; text: "X"; color: #fca5a5; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 48px; width: 370px; height: 28px; text: root.gyro-x; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+
+        Text { x: 16px; y: 80px; width: 28px; height: 28px; text: "Y"; color: #86efac; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 80px; width: 370px; height: 28px; text: root.gyro-y; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+
+        Text { x: 16px; y: 112px; width: 28px; height: 28px; text: "Z"; color: #93c5fd; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Text { x: 50px; y: 112px; width: 370px; height: 28px; text: root.gyro-z; color: Theme.primary-text; font-size: 24px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
+    }
+}

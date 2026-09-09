@@ -34,6 +34,7 @@ action("generate_slint_ui") {
     "ui/pages/screen-color-page.slint",
     "ui/pages/sd-card-page.slint",
     "ui/pages/wifi-scan-page.slint",
+    "ui/pages/imu-page.slint",
     "../slint_sdcard/assets/website-text.ttf",
     "../slint_sdcard/assets/website-glyphs.slint",
   ]
@@ -60,6 +61,7 @@ reload_autoconf_and_build("slint_ui_example") {
     "resources/background_480x480.rgb565",
     "src/png_view.rs",
     "src/sdcard.rs",
+    "src/imu.rs",
     "../slint_sdcard/src/text_pages.rs",
     "../slint_sdcard/assets/text-metrics.rs",
   ]
