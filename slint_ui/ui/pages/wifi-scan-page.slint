@@ -13,16 +13,16 @@ export struct WifiNetwork {
 }
 
 export component WifiScanPage inherits AppPage {
-    title: "WIRELESS SCAN";
-    subtitle: "ESP32-C6  /  2.4 GHZ NETWORKS";
+    title: "无线扫描";
+    subtitle: "ESP32-C6  /  2.4 GHZ 网络";
     accent: #4bd6a2;
-    action-text: scanning ? "SCANNING..." : "SCAN AGAIN";
+    action-text: scanning ? "扫描中..." : "重新扫描";
     action-disabled: scanning;
 
     in property <[WifiNetwork]> networks;
     in-out property <bool> scanning: false;
     in-out property <int> result-count: 0;
-    in-out property <string> status-text: "Preparing wireless scanner";
+    in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
 
     action-clicked => { root.scan-requested(); }
@@ -63,7 +63,7 @@ export component WifiScanPage inherits AppPage {
             y: 7px;
             width: 376px;
             height: 20px;
-            text: root.scanning ? "Looking for nearby access points" : root.result-count > 0 ? "Nearby access points" : "No scan results yet";
+            text: root.scanning ? "正在搜索附近接入点" : root.result-count > 0 ? "附近接入点" : "暂无扫描结果";
             color: Theme.primary-text;
             font-size: 11px;
             font-weight: 700;
@@ -112,7 +112,7 @@ export component WifiScanPage inherits AppPage {
             y: 127px;
             width: 388px;
             height: 24px;
-            text: root.scanning ? "Scanning channels 1 through 13" : "Tap SCAN AGAIN to search for networks";
+            text: root.scanning ? "扫描信道 1 至 13" : "点击重新扫描搜索网络";
             color: Theme.secondary-text;
             font-size: 10px;
             font-weight: 600;
@@ -125,7 +125,7 @@ export component WifiScanPage inherits AppPage {
             y: 156px;
             width: 388px;
             height: 20px;
-            text: "SSID, signal, channel and security will appear here";
+            text: "SSID、信号、信道和安全信息将显示在此处";
             color: Theme.muted-text;
             font-size: 8px;
             horizontal-alignment: center;
@@ -253,7 +253,7 @@ export component WifiScanPage inherits AppPage {
             y: 7px;
             width: 424px;
             height: 30px;
-            text: root.result-count > 6 ? "Showing 6 strongest  /  Auto refresh: 15 seconds" : "Signal order  /  Auto refresh: 15 seconds";
+            text: root.result-count > 6 ? "显示最强 6 个  /  自动刷新: 15 秒" : "信号排序  /  自动刷新: 15 秒";
             color: Theme.muted-text;
             font-size: 8px;
             font-weight: 600;
