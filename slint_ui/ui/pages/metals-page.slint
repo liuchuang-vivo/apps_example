@@ -13,17 +13,6 @@ export component MetalsPage inherits AppPage {
     title: "HTTP GET";
     accent: #5ca9ff;
 
-    Text {
-        x: 20px;
-        y: 68px;
-        width: 270px;
-        height: 48px;
-        text: "COMEX · USD/oz";
-        color: Theme.secondary-text;
-        font-size: Theme.font-sm;
-        vertical-alignment: center;
-    }
-
     Rectangle {
         x: 326px;
         y: 70px;
@@ -63,7 +52,7 @@ export component MetalsPage inherits AppPage {
         Text {
             width: parent.width;
             height: parent.height;
-            text: root.time;
+            text: "时间: " + root.time;
             color: Theme.primary-text;
             font-size: 48px;
             font-weight: 800;
@@ -92,23 +81,23 @@ export component MetalsPage inherits AppPage {
         }
         Text {
             x: 44px;
-            width: 120px;
+            width: 56px;
             height: parent.height;
-            text: "Gold";
+            text: "金价";
             color: #fbbf24;
             font-size: Theme.font-base;
             font-weight: 700;
             vertical-alignment: center;
         }
         Text {
-            x: 164px;
-            width: 252px;
+            x: 100px;
+            width: 320px;
             height: parent.height;
             text: root.xau;
             color: Theme.primary-text;
             font-size: Theme.font-lg;
             font-weight: 800;
-            horizontal-alignment: right;
+            horizontal-alignment: left;
             vertical-alignment: center;
         }
     }
@@ -133,23 +122,23 @@ export component MetalsPage inherits AppPage {
         }
         Text {
             x: 44px;
-            width: 120px;
+            width: 56px;
             height: parent.height;
-            text: "Silver";
+            text: "银价";
             color: #cbd5e1;
             font-size: Theme.font-base;
             font-weight: 700;
             vertical-alignment: center;
         }
         Text {
-            x: 164px;
-            width: 252px;
+            x: 100px;
+            width: 320px;
             height: parent.height;
             text: root.xag;
             color: Theme.primary-text;
             font-size: Theme.font-lg;
             font-weight: 800;
-            horizontal-alignment: right;
+            horizontal-alignment: left;
             vertical-alignment: center;
         }
     }

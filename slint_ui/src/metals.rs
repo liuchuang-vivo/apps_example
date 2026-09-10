@@ -440,13 +440,13 @@ impl MetalsFetcher {
             WifiState::Connected => true,
             WifiState::Failed => false,
             WifiState::Idle => {
-                ui.set_metals_status("Connecting WiFi...".into());
+                ui.set_metals_status("正在连接 WiFi...".into());
                 match open_ctl_socket() {
                     Ok(fd) => self.ctl_socket = Some(fd),
                     Err(_) => {
                         println!("WIFI SOCK ERR");
                         self.wifi_state = WifiState::Failed;
-                        ui.set_metals_status("WiFi socket failed".into());
+                        ui.set_metals_status("WiFi 套接字失败".into());
                         return false;
                     }
                 }
@@ -462,7 +462,7 @@ impl MetalsFetcher {
                     Err(_) => {
                         println!("WIFI CONN ERR");
                         self.wifi_state = WifiState::Failed;
-                        ui.set_metals_status("WiFi connect failed".into());
+                        ui.set_metals_status("WiFi 连接失败".into());
                     }
                 }
                 false
@@ -474,7 +474,7 @@ impl MetalsFetcher {
                 if now.saturating_sub(started_at) >= WIFI_CONNECT_GRACE_MS {
                     println!("WIFI UP");
                     self.wifi_state = WifiState::Connected;
-                    ui.set_metals_status("WiFi connected".into());
+                    ui.set_metals_status("WiFi 已连接".into());
                     true
                 } else {
                     false
@@ -494,15 +494,15 @@ impl MetalsFetcher {
                 if let Some(silver) = extract_tencent_price(&body, "hf_SI") {
                     ui.set_metals_xag(silver.into());
                 }
-                ui.set_metals_status("Updated".into());
+                ui.set_metals_status("已更新".into());
             }
             Ok((code, _)) => {
                 println!("TX !200");
-                ui.set_metals_status(format!("HTTP {}", code).into());
+                ui.set_metals_status(format!("HTTP 状态 {}", code).into());
             }
             Err(err) => {
                 println!("TX ERR kind={:?} raw={:?}", err.kind(), err.raw_os_error());
-                ui.set_metals_status("Price fetch failed".into());
+                ui.set_metals_status("价格获取失败".into());
             }
         }
     }
