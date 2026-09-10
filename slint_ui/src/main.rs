@@ -27,6 +27,7 @@ mod battery;
 mod brightness;
 mod flash_io;
 mod math;
+mod metals;
 mod sched_mon;
 mod png_view;
 mod sdcard;
@@ -784,6 +785,7 @@ fn run_slint_ui() -> IoResult<()> {
     let _imu_timer = imu::install(&ui);
     let _sched_mon_timer = sched_mon::install(&ui);
     let _flash_io_timer = flash_io::install(&ui);
+    let _metals_timer = metals::install(&ui);
     brightness::install(&ui);
 
     ui.on_debug(|msg| {
