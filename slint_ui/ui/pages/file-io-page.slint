@@ -4,7 +4,7 @@ import { AppPage } from "../components/app-page.slint";
 import { Theme } from "../components/theme.slint";
 
 export component FileIoPage inherits AppPage {
-    title: "FLASH IO";
+    title: "文件 IO";
     accent: #f0bd62;
 
     in-out property <bool> running: false;
@@ -13,7 +13,7 @@ export component FileIoPage inherits AppPage {
     in-out property <int> average-kbps: 0;
     in-out property <int> slot: 0;
     in-out property <int> sequence: 0;
-    in-out property <string> status-text: "Tap START to write and verify Flash";
+    in-out property <string> status-text: "点按 START 写入并校验 Flash";
     callback start-requested();
 
     property <int> total-bytes: 128;
@@ -31,12 +31,12 @@ export component FileIoPage inherits AppPage {
         }
         Text {
             x: 18px; y: 43px; width: 412px; height: 18px;
-            text: "4 KiB slots  ·  2048-slot wear rotation";
+            text: "4 KiB 槽位  ·  2048 槽位磨损轮转";
             color: Theme.secondary-text; font-size: Theme.font-sm;
         }
         Text {
             x: 18px; y: 66px; width: 412px; height: 16px;
-            text: "slot " + root.slot + " / 2047    sequence " + root.sequence;
+            text: "槽位 " + root.slot + " / 2047    序列 " + root.sequence;
             color: root.accent; font-size: 13px; font-weight: 700;
         }
     }
@@ -68,12 +68,12 @@ export component FileIoPage inherits AppPage {
         }
         Text {
             x: 18px; y: 76px; width: 412px; height: 20px;
-            text: root.bytes-written + " / " + root.total-bytes + " KiB    avg " + root.average-kbps + " KiB/s";
+            text: root.bytes-written + " / " + root.total-bytes + " KiB    平均 " + root.average-kbps + " KiB/s";
             color: Theme.secondary-text; font-size: Theme.font-sm;
         }
         Text {
             x: 18px; y: 103px; width: 412px; height: 16px;
-            text: "erase → program → read back → commit";
+            text: "擦除 -> 编程 -> 回读 -> 提交";
             color: Theme.muted-text; font-size: 13px;
         }
     }
@@ -84,7 +84,7 @@ export component FileIoPage inherits AppPage {
         border-radius: 10px;
         Text {
             width: parent.width; height: parent.height;
-            text: root.running ? "RUNNING..." : "START 128 KiB TEST";
+            text: root.running ? "运行中..." : "开始 128 KiB 测试";
             color: root.running ? Theme.muted-text : #111820;
             font-size: Theme.font-base; font-weight: 800;
             horizontal-alignment: center; vertical-alignment: center;

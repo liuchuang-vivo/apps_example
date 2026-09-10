@@ -336,7 +336,7 @@ impl Controller {
         ui.set_flash_speed_kbps(0);
         ui.set_flash_average_kbps(0);
         ui.set_flash_running(true);
-        ui.set_flash_status_text("Writing rotating Flash slots".into());
+        ui.set_flash_status_text("正在写入 Flash 槽位".into());
         Ok(())
     }
 
@@ -363,14 +363,14 @@ impl Controller {
                 ui.set_flash_average_kbps(average);
                 if self.remaining == 0 {
                     ui.set_flash_running(false);
-                    ui.set_flash_status_text("Write and verification passed".into());
+                    ui.set_flash_status_text("写入并校验通过".into());
                 }
             }
             Err(error) => {
                 println!("[FLASH_IO] failed: {error}");
                 self.remaining = 0;
                 ui.set_flash_running(false);
-                ui.set_flash_status_text(format!("Flash error: {error}").into());
+                ui.set_flash_status_text(format!("Flash 错误: {error}").into());
             }
         }
     }
@@ -421,7 +421,7 @@ pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
         if let Some(ui) = ui_weak.upgrade() {
             if let Err(error) = callback_controller.borrow_mut().start(&ui) {
                 ui.set_flash_running(false);
-                ui.set_flash_status_text(format!("Flash unavailable: {error}").into());
+                ui.set_flash_status_text(format!("Flash 不可用: {error}").into());
             }
         }
     });
