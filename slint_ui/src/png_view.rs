@@ -25,7 +25,7 @@ use std::rc::Rc;
 
 const PNG_MAX_DIMENSION: u32 = 480;
 const PNG_PANEL_X: usize = 105;
-const PNG_PANEL_Y: usize = 144;
+const PNG_PANEL_Y: usize = 122;
 const PNG_DISPLAY_X: usize = PNG_PANEL_X;
 const PNG_DISPLAY_Y: usize = PNG_PANEL_Y;
 const PNG_DISPLAY_MAX_WIDTH: u32 = PNG_PANEL_W as u32;

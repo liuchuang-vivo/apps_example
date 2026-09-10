@@ -57,6 +57,9 @@ struct WifiScanner {
     scan_requested: bool,
     page_active: bool,
     next_auto_scan_at: u128,
+    results: Vec<WifiNetworkInfo>,
+    scroll_offset: usize,
+    total_count: usize,
 }
 
 impl SocketFd {
@@ -202,7 +205,7 @@ fn decode_wifi_scan(buffer: &[u8]) -> IoResult<WifiScanResults> {
     let mut offset = 0;
     let count = take_bytes(buffer, &mut offset, 4)?;
     let count = u32::from_le_bytes(count.try_into().unwrap()) as usize;
-    let mut networks: Vec<WifiNetworkInfo> = Vec::with_capacity(count.min(MAX_VISIBLE_NETWORKS));
+    let mut networks: Vec<WifiNetworkInfo> = Vec::with_capacity(count);
 
     for _ in 0..count {
         let ssid_len = take_bytes(buffer, &mut offset, 4)?;
@@ -220,33 +223,17 @@ fn decode_wifi_scan(buffer: &[u8]) -> IoResult<WifiScanResults> {
         let channel = u16::from_le_bytes(channel.try_into().unwrap());
         let security = take_bytes(buffer, &mut offset, 1)?[0];
 
-        let insert_at = if networks.len() < MAX_VISIBLE_NETWORKS {
-            Some(networks.len())
-        } else {
-            networks
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, network)| network.signal_dbm)
-                .and_then(|(index, weakest)| (signal_dbm > weakest.signal_dbm).then_some(index))
-        };
-
-        if let Some(index) = insert_at {
-            let network = WifiNetworkInfo {
-                ssid: if ssid.is_empty() {
-                    String::from("<hidden network>")
-                } else {
-                    String::from_utf8_lossy(ssid).into_owned()
-                },
-                signal_dbm,
-                channel,
-                security,
-            };
-            if index == networks.len() {
-                networks.push(network);
+        let network = WifiNetworkInfo {
+            ssid: if ssid.is_empty() {
+                String::from("<hidden network>")
             } else {
-                networks[index] = network;
-            }
-        }
+                String::from_utf8_lossy(ssid).into_owned()
+            },
+            signal_dbm,
+            channel,
+            security,
+        };
+        networks.push(network);
     }
 
     networks.sort_by(|left, right| right.signal_dbm.cmp(&left.signal_dbm));
@@ -336,12 +323,58 @@ impl WifiScanner {
             scan_requested: false,
             page_active: false,
             next_auto_scan_at: 0,
+            results: Vec::new(),
+            scroll_offset: 0,
+            total_count: 0,
+        }
+    }
+
+    fn show_page(&self, ui: &MainWindow) {
+        let page: Vec<WifiNetwork> = self.results[self.scroll_offset..]
+            .iter()
+            .take(MAX_VISIBLE_NETWORKS)
+            .map(to_slint_network)
+            .collect();
+        replace_network_rows(ui, page);
+        ui.set_result_count(self.total_count as i32);
+    }
+
+    fn can_scroll_down(&self) -> bool {
+        self.scroll_offset > 0
+    }
+
+    fn can_scroll_up(&self) -> bool {
+        self.scroll_offset + MAX_VISIBLE_NETWORKS < self.results.len()
+    }
+
+    fn scroll_up(&mut self, ui: &MainWindow) {
+        if self.results.is_empty() {
+            return;
+        }
+        let new_offset = self.scroll_offset + MAX_VISIBLE_NETWORKS;
+        if new_offset < self.results.len() {
+            self.scroll_offset = new_offset;
+            self.show_page(ui);
+        }
+    }
+
+    fn scroll_down(&mut self, ui: &MainWindow) {
+        if self.results.is_empty() {
+            return;
+        }
+        let new_offset = self
+            .scroll_offset
+            .saturating_sub(MAX_VISIBLE_NETWORKS);
+        if new_offset != self.scroll_offset {
+            self.scroll_offset = new_offset;
+            self.show_page(ui);
         }
     }
 
     fn set_page_active(&mut self, ui: &MainWindow, active: bool) {
         self.page_active = active;
         if active {
+            self.scroll_offset = 0;
             self.request_scan(ui);
         }
         // When the Wi-Fi page is left, scanning stops until the user
@@ -361,11 +394,34 @@ impl WifiScanner {
     fn finish_scan(&mut self, ui: &MainWindow, result: IoResult<WifiScanResults>) {
         self.state = WifiScanState::Idle;
         self.next_auto_scan_at = uptime_millis().saturating_add(AUTO_SCAN_INTERVAL_MS);
-        show_scan_result(ui, result);
+        match result {
+            Ok(results) => {
+                self.results = results.networks;
+                self.total_count = results.total_count;
+                self.scroll_offset = 0;
+                self.show_page(ui);
+                if results.total_count == 0 {
+                    ui.set_status_text("扫描完成，未发现接入点".into());
+                } else {
+                    ui.set_status_text(
+                        format!("发现 {} 个附近网络", results.total_count).into(),
+                    );
+                }
+            }
+            Err(error) => {
+                self.results.clear();
+                self.total_count = 0;
+                replace_network_rows(ui, Vec::new());
+                ui.set_result_count(0);
+                ui.set_status_text(format!("扫描失败: {error}").into());
+            }
+        }
+        ui.set_scanning(false);
     }
 
     fn start_scan(&mut self, ui: &MainWindow, now: u128) {
         self.scan_requested = false;
+        self.scroll_offset = 0;
         ui.set_scanning(true);
         ui.set_status_text("扫描信道 1 至 13".into());
 
@@ -452,6 +508,22 @@ pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
     ui.on_wifi_page_active_changed(move |active| {
         if let Some(ui) = ui_weak.upgrade() {
             active_scanner.borrow_mut().set_page_active(&ui, active);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let scroll_up_scanner = scanner.clone();
+    ui.on_wifi_scroll_up(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            scroll_up_scanner.borrow_mut().scroll_up(&ui);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    let scroll_down_scanner = scanner.clone();
+    ui.on_wifi_scroll_down(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            scroll_down_scanner.borrow_mut().scroll_down(&ui);
         }
     });
 

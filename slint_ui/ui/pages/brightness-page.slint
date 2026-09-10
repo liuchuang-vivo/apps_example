@@ -1,5 +1,5 @@
 // Brightness control page with a custom slider.
-// Compatible with SoftwareRenderer::render_by_line: no Path items.
+// Content directly on screen-background, no card box.
 
 import { AppPage } from "../components/app-page.slint";
 import { Theme } from "../components/theme.slint";
@@ -12,173 +12,163 @@ export component BrightnessPage inherits AppPage {
     property <int> min-brightness: 30;
     callback set-brightness(int);
 
+    // Brightness percentage — above the slider
+    Text {
+        x: 0;
+        y: 76px;
+        width: parent.width;
+        height: 52px;
+        text: root.brightness + "%";
+        color: root.accent;
+        font-size: 48px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Vertical slider — thick (80px wide, 220px tall)
+    // Layout: [slider(80px)] + 10px gap + [buttons(72px)] = 162px, centred
     Rectangle {
-        x: 28px;
-        y: 98px;
-        width: 424px;
-        height: 340px;
-        background: Theme.card-background;
+        x: (parent.width - 162px) / 2;  // = 159px
+        y: 142px;
+        width: 80px;
+        height: 220px;
+        background: Theme.raised-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 5px;
+
+        // Slider fill (from bottom = 0% to top = 100%)
+        Rectangle {
+            x: 0;
+            y: parent.height * (1 - (root.brightness - root.min-brightness) / (100 - root.min-brightness));
+            width: parent.width;
+            height: parent.height * (root.brightness - root.min-brightness) / (100 - root.min-brightness);
+            background: root.accent;
+            border-radius: 5px;
+        }
+
+        // Slider handle
+        Rectangle {
+            x: -8px;
+            y: parent.height * (1 - (root.brightness - root.min-brightness) / (100 - root.min-brightness)) - 18px;
+            width: 96px;
+            height: 36px;
+            background: slider-area.pressed ? #ffffff : #f0f0f0;
+            border-width: 2px;
+            border-color: root.accent;
+            border-radius: 5px;
+            Rectangle {
+                x: 36px;
+                y: 8px;
+                width: 24px;
+                height: 20px;
+                background: root.accent;
+                border-radius: 2px;
+            }
+        }
+
+        // Touch area for slider dragging
+        slider-area := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            property <bool> dragging: false;
+            property <float> track-px: parent.height / 1px;
+
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    self.dragging = true;
+                    root.brightness = clamp(round((1 - self.mouse-y / 1px / self.track-px) * (100 - root.min-brightness) + root.min-brightness), root.min-brightness, 100);
+                }
+                if event.kind == PointerEventKind.up {
+                    self.dragging = false;
+                    root.set-brightness(root.brightness);
+                }
+            }
+
+            moved => {
+                if self.dragging {
+                    root.brightness = clamp(round((1 - self.mouse-y / 1px / self.track-px) * (100 - root.min-brightness) + root.min-brightness), root.min-brightness, 100);
+                }
+            }
+        }
+    }
+
+    // Plus and minus buttons — vertically stacked to the right of slider
+    // Button x = slider x + 80 + 10 = 249, size 72×72, border-radius 14px
+    Rectangle {
+        x: (parent.width - 162px) / 2 + 80px + 10px;
+        y: 156px;
+        width: 72px;
+        height: 72px;
+        background: plus-area.pressed ? Theme.pressed-background : Theme.raised-background;
         border-width: 1px;
         border-color: Theme.border-color;
         border-radius: 14px;
 
-        // Brightness percentage (large display)
         Text {
-            x: 0;
-            y: 24px;
             width: parent.width;
-            height: 64px;
-            text: root.brightness + "%";
+            height: parent.height;
+            text: "+";
             color: root.accent;
-            font-size: 24px;
+            font-size: Theme.font-lg;
             font-weight: 800;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
 
-        // Custom slider track
-        Rectangle {
-            x: 44px;
-            y: 132px;
-            width: 336px;
-            height: 24px;
-            background: Theme.raised-background;
-            border-width: 1px;
-            border-color: Theme.border-color;
-            border-radius: 12px;
-
-            // Slider fill
-            Rectangle {
-                x: 0;
-                y: 0;
-                width: parent.width * (root.brightness - root.min-brightness) / (100 - root.min-brightness);
-                height: parent.height;
-                background: root.accent;
-                border-radius: 12px;
-            }
-
-            // Slider handle (larger, with shadow-like effect)
-            Rectangle {
-                x: parent.width * (root.brightness - root.min-brightness) / (100 - root.min-brightness) - 14px;
-                y: -8px;
-                width: 28px;
-                height: 40px;
-                background: slider-area.pressed ? #ffffff : #f0f0f0;
-                border-width: 2px;
-                border-color: root.accent;
-                border-radius: 14px;
-                Rectangle {
-                    x: 8px;
-                    y: 12px;
-                    width: 12px;
-                    height: 16px;
-                    background: root.accent;
-                    border-radius: 2px;
-                }
-            }
-
-            // Touch area for slider dragging
-            slider-area := TouchArea {
-                width: parent.width;
-                height: parent.height;
-                property <bool> dragging: false;
-                property <float> track-px: parent.width / 1px;
-
-                pointer-event(event) => {
-                    if event.kind == PointerEventKind.down {
-                        self.dragging = true;
-                        root.brightness = clamp(round(self.mouse-x / 1px / self.track-px * (100 - root.min-brightness) + root.min-brightness), root.min-brightness, 100);
-                    }
-                    if event.kind == PointerEventKind.up {
-                        self.dragging = false;
-                        root.set-brightness(root.brightness);
-                    }
-                }
-
-                moved => {
-                    if self.dragging {
-                        root.brightness = clamp(round(self.mouse-x / 1px / self.track-px * (100 - root.min-brightness) + root.min-brightness), root.min-brightness, 100);
-                    }
-                }
-            }
-        }
-
-        // Minus button
-        Rectangle {
-            x: 92px;
-            y: 170px;
-            width: 80px;
-            height: 56px;
-            background: minus-area.pressed ? Theme.pressed-background : Theme.raised-background;
-            border-width: 1px;
-            border-color: Theme.border-color;
-            border-radius: 14px;
-
-            Text {
-                width: parent.width;
-                height: parent.height;
-                text: "−";
-                color: root.accent;
-                font-size: 24px;
-                font-weight: 800;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            minus-area := TouchArea {
-                width: parent.width;
-                height: parent.height;
-                clicked => {
-                    root.brightness = max(root.brightness - 10, root.min-brightness);
-                    root.set-brightness(root.brightness);
-                }
-            }
-        }
-
-        // Plus button
-        Rectangle {
-            x: 252px;
-            y: 170px;
-            width: 80px;
-            height: 56px;
-            background: plus-area.pressed ? Theme.pressed-background : Theme.raised-background;
-            border-width: 1px;
-            border-color: Theme.border-color;
-            border-radius: 14px;
-
-            Text {
-                width: parent.width;
-                height: parent.height;
-                text: "+";
-                color: root.accent;
-                font-size: 24px;
-                font-weight: 800;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            plus-area := TouchArea {
-                width: parent.width;
-                height: parent.height;
-                clicked => {
-                    root.brightness = min(root.brightness + 10, 100);
-                    root.set-brightness(root.brightness);
-                }
-            }
-        }
-
-        // Status text
-        Text {
-            x: 0;
-            y: 250px;
+        plus-area := TouchArea {
             width: parent.width;
-            height: 24px;
-            text: "拖动滑块或点击 −/+ 调节亮度";
-            color: Theme.muted-text;
-            font-size: 10px;
-            font-weight: 600;
+            height: parent.height;
+            clicked => {
+                root.brightness = min(root.brightness + 10, 100);
+                root.set-brightness(root.brightness);
+            }
+        }
+    }
+
+    Rectangle {
+        x: (parent.width - 162px) / 2 + 80px + 10px;
+        y: 252px;
+        width: 72px;
+        height: 72px;
+        background: minus-area.pressed ? Theme.pressed-background : Theme.raised-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 14px;
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: "−";
+            color: root.accent;
+            font-size: Theme.font-lg;
+            font-weight: 800;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
+
+        minus-area := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                root.brightness = max(root.brightness - 10, root.min-brightness);
+                root.set-brightness(root.brightness);
+            }
+        }
+    }
+
+    // Status text
+    Text {
+        x: 0;
+        y: 380px;
+        width: parent.width;
+        height: 24px;
+        text: "上下拖动滑块或点击 +/- 调节";
+        color: Theme.muted-text;
+        font-size: Theme.font-sm;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
     }
 }

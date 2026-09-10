@@ -175,6 +175,11 @@ impl SdBrowser {
             .collect();
         replace_entry_rows(ui, rows);
         ui.set_sd_total_count(total as i32);
+        let per_page = MAX_VISIBLE_ENTRIES;
+        let total_pages = (total + per_page - 1) / per_page;
+        ui.set_sd_total_pages(total_pages as i32);
+        let current_page = self.scroll_offset / per_page + 1;
+        ui.set_sd_current_page(current_page as i32);
         ui.set_sd_visible_count((visible_end - self.scroll_offset) as i32);
         ui.set_sd_scroll_offset(self.scroll_offset as i32);
         ui.set_sd_status_text(if total == 0 {
@@ -194,9 +199,13 @@ impl SdBrowser {
                     self.current_path
                 );
                 self.entries = entries;
-                self.scroll_offset = self
-                    .scroll_offset
-                    .min(self.entries.len().saturating_sub(MAX_VISIBLE_ENTRIES));
+                let total = self.entries.len();
+                let max_offset = if total <= MAX_VISIBLE_ENTRIES {
+                    0
+                } else {
+                    (total - 1) / MAX_VISIBLE_ENTRIES * MAX_VISIBLE_ENTRIES
+                };
+                self.scroll_offset = self.scroll_offset.min(max_offset);
                 ui.set_sd_read_error(false);
                 self.update_visible_entries(ui);
             }
@@ -307,7 +316,7 @@ impl SdBrowser {
                 let (display_w, display_h) = png_view::fit_png_dimensions(width, height);
                 ui.set_sd_image_title(name.into());
                 ui.set_sd_image_status(
-                    format!("{width}x{height} → {display_w}x{display_h}").into(),
+                    format!("{width}x{height}").into(),
                 );
                 // The opaque PNG viewer covers the directory rows. Remove their
                 // Slint repeater instances before decoding so fdeflate can use
@@ -359,7 +368,15 @@ impl SdBrowser {
     }
 
     fn scroll(&mut self, ui: &MainWindow, delta: isize) {
-        let max_offset = self.entries.len().saturating_sub(MAX_VISIBLE_ENTRIES);
+        // Page-aligned max offset: the last page may hold fewer than
+        // MAX_VISIBLE_ENTRIES, but its start must still be reachable so
+        // the page counter can reach the final page.
+        let total = self.entries.len();
+        let max_offset = if total <= MAX_VISIBLE_ENTRIES {
+            0
+        } else {
+            (total - 1) / MAX_VISIBLE_ENTRIES * MAX_VISIBLE_ENTRIES
+        };
         let next = if delta < 0 {
             self.scroll_offset.saturating_sub(delta.unsigned_abs())
         } else {
@@ -420,7 +437,7 @@ pub(crate) fn install(ui: &MainWindow, png_state: SharedPngRenderState) {
     let callback_browser = browser.clone();
     ui.on_sd_scroll_up(move || {
         if let Some(ui) = ui_weak.upgrade() {
-            callback_browser.borrow_mut().scroll(&ui, -1);
+            callback_browser.borrow_mut().scroll(&ui, -(MAX_VISIBLE_ENTRIES as isize));
         }
     });
 
@@ -428,7 +445,7 @@ pub(crate) fn install(ui: &MainWindow, png_state: SharedPngRenderState) {
     let callback_browser = browser.clone();
     ui.on_sd_scroll_down(move || {
         if let Some(ui) = ui_weak.upgrade() {
-            callback_browser.borrow_mut().scroll(&ui, 1);
+            callback_browser.borrow_mut().scroll(&ui, MAX_VISIBLE_ENTRIES as isize);
         }
     });
 

@@ -16,6 +16,7 @@
 
 use crate::app_window::MainWindow;
 use crate::syscall_error;
+use crate::uptime_millis;
 use librs::c_str::CStr;
 use librs::syscall::Syscall;
 use slint::ComponentHandle;
@@ -26,7 +27,7 @@ use std::rc::Rc;
 const IMU_DEVICE_PATH: &[u8] = b"/dev/qmi86580\0";
 const IMU_REPORT_SIZE: usize = 16;
 const IMU_REPORT_VERSION: u8 = 1;
-const POLL_MS: u64 = 50; // 20 Hz refresh rate
+const POLL_MS: u64 = 1000; // 1 Hz refresh rate
 
 /// Low-pass filter coefficient when the value is stable (small changes).
 /// Used when the change from raw to old is below the threshold.
@@ -196,6 +197,13 @@ impl ImuPoller {
         if ui.get_current_app() != 12 {
             return;
         }
+        // Suspend reads while the user is touching the screen: a redraw
+        // triggered by new values takes ~500ms of SPI IO on this page and
+        // would block the event loop, dropping the swipe's move events and
+        // leaving GestureLayer with dx=0/dy=0 (misdetected as a tap).
+        if crate::touch_is_pressed() {
+            return;
+        }
 
         // Lazily open the IMU device on first tick (the kernel driver may not
         // be ready immediately at boot).
@@ -212,10 +220,15 @@ impl ImuPoller {
         }
 
         let imu = self.imu.as_ref().unwrap();
+        let read_start = uptime_millis();
         let raw = match imu.read_report() {
             Ok(r) => r,
             Err(_) => return,
         };
+        let read_ms = uptime_millis().saturating_sub(read_start);
+        if read_ms > 5 {
+            println!("[IMU] read_report blocked {} ms", read_ms);
+        }
 
         // Apply low-pass filter, then rate-limit to suppress spikes
         let accel_x = Self::ratelimit(
