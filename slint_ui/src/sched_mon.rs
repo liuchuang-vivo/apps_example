@@ -20,7 +20,7 @@ use crate::app_window::MainWindow;
 use crate::syscall_error;
 use librs::c_str::CStr;
 use librs::syscall::Syscall;
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use std::cell::RefCell;
 use std::io::{Error, ErrorKind, Result as IoResult};
 use std::rc::Rc;
@@ -402,11 +402,14 @@ impl SchedMonitor {
             name_col.push("".into());
         }
 
-        ui.set_task_tids(slint::ModelRc::new(slint::VecModel::from(tid_col)));
-        ui.set_task_types(slint::ModelRc::new(slint::VecModel::from(type_col)));
-        ui.set_task_states(slint::ModelRc::new(slint::VecModel::from(state_col)));
-        ui.set_task_prios(slint::ModelRc::new(slint::VecModel::from(prio_col)));
-        ui.set_task_names(slint::ModelRc::new(slint::VecModel::from(name_col)));
+        // Update rows in-place via existing VecModels. Only changed rows
+        // dirty the scene; replacing the whole model every tick forced all
+        // 4×5 Text cells to recompute (248 dirty lines, 330ms per frame).
+        update_task_model(&ui.get_task_tids(), &tid_col);
+        update_task_model(&ui.get_task_types(), &type_col);
+        update_task_model(&ui.get_task_states(), &state_col);
+        update_task_model(&ui.get_task_prios(), &prio_col);
+        update_task_model(&ui.get_task_names(), &name_col);
         ui.set_task_hidden(tids.len().saturating_sub(MAX_TASK_LINES) as i32);
     }
 
@@ -415,7 +418,6 @@ impl SchedMonitor {
         if ui.get_current_app() != 6 {
             return;
         }
-        println!("[SCHED] tick fired");
 
         // ---- Task list ----
         self.refresh_task_list(ui);
@@ -444,8 +446,14 @@ impl SchedMonitor {
                 while cpu_pcts.len() < CORE_COUNT {
                     cpu_pcts.push(0.0);
                 }
-                let model = slint::ModelRc::new(slint::VecModel::from(cpu_pcts));
-                ui.set_cpu_usage_percent(model);
+                // Only push a new model when the rounded percentage changed;
+                // an identical value still dirties the CPU bar every tick.
+                let new_pct = cpu_pcts[0];
+                let old_pct = ui.get_cpu_usage_percent().row_data(0).unwrap_or(0.0);
+                if (new_pct - old_pct).abs() > 0.5 {
+                    let model = slint::ModelRc::new(slint::VecModel::from(cpu_pcts));
+                    ui.set_cpu_usage_percent(model);
+                }
                 ui.set_cpu_cores(CORE_COUNT as i32);
             }
             self.prev_ticks = current_ticks;
@@ -470,10 +478,45 @@ impl SchedMonitor {
     }
 }
 
+/// Update a shared task-list column model in place, only touching rows whose
+/// value actually changed. Replacing the whole model every tick dirtied all
+/// 4×5 Text cells and forced a 330ms partial redraw even when the task list
+/// was identical to the previous tick. The caller must seed each column with
+/// an empty VecModel at install time so the downcast always succeeds.
+fn update_task_model(
+    existing: &slint::ModelRc<slint::SharedString>,
+    rows: &[slint::SharedString],
+) {
+    if let Some(model) = existing.as_any().downcast_ref::<slint::VecModel<slint::SharedString>>()
+    {
+        while model.row_count() < rows.len() {
+            model.push(rows[model.row_count()].clone());
+        }
+        while model.row_count() > rows.len() {
+            model.remove(model.row_count() - 1);
+        }
+        for (i, row) in rows.iter().enumerate() {
+            if model.row_data(i).as_ref() != Some(row) {
+                model.set_row_data(i, row.clone());
+            }
+        }
+    }
+}
+
 /// Connect the scheduler monitor to the shared launcher window. The returned
 /// timer must stay alive for as long as the Slint event loop runs.
 pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
     let monitor = Rc::new(RefCell::new(SchedMonitor::new()));
+
+    // Seed empty VecModels so refresh_task_list can update rows in place
+    // (see update_task_model) instead of replacing the whole model each tick.
+    // Each column needs its own VecModel instance — ModelRc::clone() shares
+    // the underlying Rc, so all columns would alias one model and mix data.
+    ui.set_task_tids(slint::ModelRc::new(slint::VecModel::<slint::SharedString>::default()));
+    ui.set_task_types(slint::ModelRc::new(slint::VecModel::<slint::SharedString>::default()));
+    ui.set_task_states(slint::ModelRc::new(slint::VecModel::<slint::SharedString>::default()));
+    ui.set_task_prios(slint::ModelRc::new(slint::VecModel::<slint::SharedString>::default()));
+    ui.set_task_names(slint::ModelRc::new(slint::VecModel::<slint::SharedString>::default()));
 
     // Bind the refresh-tasks callback from the Slint UI.
     {
