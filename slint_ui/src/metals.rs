@@ -494,7 +494,7 @@ impl MetalsFetcher {
                 if let Some(silver) = extract_tencent_price(&body, "hf_SI") {
                     ui.set_metals_xag(silver.into());
                 }
-                ui.set_metals_status("已更新".into());
+                ui.set_metals_status("".into());
             }
             Ok((code, _)) => {
                 println!("TX !200");
@@ -538,12 +538,14 @@ impl MetalsFetcher {
             }
         }
 
-        if !self.active {
+        // Bring up WiFi from boot, independent of page visibility, so the
+        // link is already up by the time the user opens the page.
+        if !self.ensure_wifi(ui, now) {
             return;
         }
 
-        // Wait for WiFi association before sending TCP traffic.
-        if !self.ensure_wifi(ui, now) {
+        // HTTP requests only run while the page is on screen.
+        if !self.active {
             return;
         }
 

@@ -65,81 +65,69 @@ export component MetalsPage inherits AppPage {
         x: 20px;
         y: 226px;
         width: 440px;
-        height: 70px;
+        height: 152px;
         background: Theme.card-background;
         border-width: 1px;
         border-color: Theme.border-color;
         border-radius: 14px;
 
-        Rectangle {
-            x: 20px;
-            y: 23px;
-            width: 8px;
-            height: 24px;
-            background: #fbbf24;
-            border-radius: 4px;
-        }
-        Text {
-            x: 44px;
-            width: 56px;
-            height: parent.height;
-            text: "金价";
-            color: #fbbf24;
-            font-size: Theme.font-base;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-        Text {
-            x: 100px;
-            width: 320px;
-            height: parent.height;
-            text: root.xau;
-            color: Theme.primary-text;
-            font-size: Theme.font-lg;
-            font-weight: 800;
-            horizontal-alignment: left;
-            vertical-alignment: center;
-        }
-    }
+        HorizontalLayout {
+            x: 24px;
+            y: 16px;
+            width: parent.width - 48px;
+            height: 60px;
+            alignment: start;
+            spacing: 8px;
 
-    Rectangle {
-        x: 20px;
-        y: 308px;
-        width: 440px;
-        height: 70px;
-        background: Theme.card-background;
-        border-width: 1px;
-        border-color: Theme.border-color;
-        border-radius: 14px;
+            Text {
+                text: "金价:";
+                color: #fbbf24;
+                font-size: Theme.font-base;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.xau;
+                color: Theme.primary-text;
+                font-size: Theme.font-lg;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "USD/oz";
+                color: Theme.muted-text;
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            x: 24px;
+            y: 76px;
+            width: parent.width - 48px;
+            height: 60px;
+            alignment: start;
+            spacing: 8px;
 
-        Rectangle {
-            x: 20px;
-            y: 23px;
-            width: 8px;
-            height: 24px;
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        Text {
-            x: 44px;
-            width: 56px;
-            height: parent.height;
-            text: "银价";
-            color: #cbd5e1;
-            font-size: Theme.font-base;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-        Text {
-            x: 100px;
-            width: 320px;
-            height: parent.height;
-            text: root.xag;
-            color: Theme.primary-text;
-            font-size: Theme.font-lg;
-            font-weight: 800;
-            horizontal-alignment: left;
-            vertical-alignment: center;
+            Text {
+                text: "银价:";
+                color: #cbd5e1;
+                font-size: Theme.font-base;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.xag;
+                color: Theme.primary-text;
+                font-size: Theme.font-lg;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "USD/oz";
+                color: Theme.muted-text;
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
+            }
         }
     }
 
