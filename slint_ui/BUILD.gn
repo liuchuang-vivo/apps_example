@@ -26,6 +26,7 @@ action("generate_slint_ui") {
     slint_entry,
     "ui/components/app-page.slint",
     "ui/components/demo-icon.slint",
+    "ui/components/icons.slint",
     "ui/components/nav-tab.slint",
     "ui/components/theme.slint",
     "ui/launcher/launcher.slint",
@@ -34,10 +35,13 @@ action("generate_slint_ui") {
     "ui/pages/sched-mon-page.slint",
     "ui/pages/screen-color-page.slint",
     "ui/pages/sd-card-page.slint",
+    "ui/pages/text-viewer.slint",
+    "ui/pages/image-viewer.slint",
     "ui/pages/wifi-scan-page.slint",
     "ui/pages/imu-page.slint",
     "../slint_sdcard/assets/website-text.ttf",
     "../slint_sdcard/assets/website-glyphs.slint",
+    "resources/blueos-icons.ttf",
   ]
   outputs = [ _slint_ui_generated ]
   args = [
