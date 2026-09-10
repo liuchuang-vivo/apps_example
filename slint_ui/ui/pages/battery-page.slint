@@ -1,0 +1,144 @@
+// AXP2101 battery status page using the shared application theme.
+
+import { AppPage } from "../components/app-page.slint";
+import { Theme } from "../components/theme.slint";
+
+export component BatteryPage inherits AppPage {
+    in property <int> percent: 0;
+    in property <string> voltage: "--.--- V";
+    in property <string> charging-state: "正在读取";
+    in property <string> status-text: "打开页面以读取电池";
+    in property <bool> available: false;
+
+    property <int> bounded-percent: min(max(root.percent, 0), 100);
+    property <color> battery-color:
+        root.bounded-percent <= 20 ? #f06060 :
+        root.bounded-percent <= 40 ? #f0bd62 :
+        root.bounded-percent <= 80 ? #5ca9ff : #6fe0bd;
+
+    title: "电源管理";
+    accent: root.battery-color;
+
+    Rectangle {
+        x: 68px;
+        y: 84px;
+        width: 336px;
+        height: 104px;
+        background: Theme.card-background;
+        border-width: 2px;
+        border-color: Theme.border-color;
+        border-radius: 14px;
+
+        Rectangle {
+            x: 5px;
+            y: 5px;
+            width: parent.width - 10px;
+            height: parent.height - 10px;
+            border-radius: 10px;
+            clip: true;
+
+            Rectangle {
+                width: parent.width * root.bounded-percent / 100;
+                height: parent.height;
+                background: root.available ? root.battery-color : Theme.raised-background;
+            }
+        }
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: root.available ? root.bounded-percent + "%" : "--%";
+            color: Theme.primary-text;
+            font-size: Theme.font-lg;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        x: 404px;
+        y: 114px;
+        width: 10px;
+        height: 44px;
+        background: Theme.border-color;
+        border-radius: 3px;
+    }
+
+    Rectangle {
+        x: 20px;
+        y: 210px;
+        width: 440px;
+        height: 66px;
+        background: Theme.card-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 14px;
+
+        Text {
+            x: 20px;
+            width: 150px;
+            height: parent.height;
+            text: "电池电压";
+            color: Theme.secondary-text;
+            font-size: Theme.font-base;
+            vertical-alignment: center;
+        }
+        Text {
+            x: 170px;
+            width: 246px;
+            height: parent.height;
+            text: root.voltage;
+            color: Theme.primary-text;
+            font-size: Theme.font-lg;
+            font-weight: 800;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        x: 20px;
+        y: 288px;
+        width: 440px;
+        height: 66px;
+        background: Theme.card-background;
+        border-width: 1px;
+        border-color: Theme.border-color;
+        border-radius: 14px;
+
+        Text {
+            x: 20px;
+            width: 150px;
+            height: parent.height;
+            text: "充放电状态";
+            color: Theme.secondary-text;
+            font-size: Theme.font-base;
+            vertical-alignment: center;
+        }
+        Text {
+            x: 170px;
+            width: 246px;
+            height: parent.height;
+            text: root.charging-state;
+            color: root.available ? root.battery-color : Theme.primary-text;
+            font-size: Theme.font-base;
+            font-weight: 700;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        x: 20px;
+        y: 374px;
+        width: 440px;
+        height: 28px;
+        text: root.status-text;
+        color: Theme.muted-text;
+        font-size: Theme.font-sm;
+        overflow: elide;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

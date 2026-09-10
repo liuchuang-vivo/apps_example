@@ -1,0 +1,97 @@
+// Raw internal Flash IO demo with rotating 4 KiB records.
+
+import { AppPage } from "../components/app-page.slint";
+import { Theme } from "../components/theme.slint";
+
+export component FileIoPage inherits AppPage {
+    title: "FLASH IO";
+    accent: #f0bd62;
+
+    in-out property <bool> running: false;
+    in-out property <int> bytes-written: 0;
+    in-out property <int> speed-kbps: 0;
+    in-out property <int> average-kbps: 0;
+    in-out property <int> slot: 0;
+    in-out property <int> sequence: 0;
+    in-out property <string> status-text: "Tap START to write and verify Flash";
+    callback start-requested();
+
+    property <int> total-bytes: 128;
+    property <float> progress: root.bytes-written / root.total-bytes;
+
+    Rectangle {
+        x: 16px; y: 76px; width: 448px; height: 92px;
+        background: Theme.card-background;
+        border-width: 1px; border-color: Theme.border-color; border-radius: 9px;
+
+        Text {
+            x: 18px; y: 12px; width: 250px; height: 24px;
+            text: "/dev/esp32-flash0";
+            color: Theme.primary-text; font-size: Theme.font-base; font-weight: 700;
+        }
+        Text {
+            x: 18px; y: 43px; width: 412px; height: 18px;
+            text: "4 KiB slots  ·  2048-slot wear rotation";
+            color: Theme.secondary-text; font-size: Theme.font-sm;
+        }
+        Text {
+            x: 18px; y: 66px; width: 412px; height: 16px;
+            text: "slot " + root.slot + " / 2047    sequence " + root.sequence;
+            color: root.accent; font-size: 13px; font-weight: 700;
+        }
+    }
+
+    Rectangle {
+        x: 16px; y: 180px; width: 448px; height: 132px;
+        background: Theme.card-background;
+        border-width: 1px; border-color: Theme.border-color; border-radius: 9px;
+
+        Text {
+            x: 18px; y: 12px; width: 270px; height: 22px;
+            text: root.status-text;
+            color: root.running ? root.accent : Theme.primary-text;
+            font-size: 14px; font-weight: 700; overflow: elide;
+        }
+        Text {
+            x: 292px; y: 12px; width: 136px; height: 22px;
+            text: root.speed-kbps + " KiB/s";
+            color: root.accent; font-size: 14px; font-weight: 800;
+            horizontal-alignment: right;
+        }
+        Rectangle {
+            x: 18px; y: 50px; width: 412px; height: 14px;
+            background: Theme.raised-background; border-radius: 7px;
+        }
+        Rectangle {
+            x: 18px; y: 50px; width: 412px * root.progress; height: 14px;
+            background: root.accent; border-radius: 7px;
+        }
+        Text {
+            x: 18px; y: 76px; width: 412px; height: 20px;
+            text: root.bytes-written + " / " + root.total-bytes + " KiB    avg " + root.average-kbps + " KiB/s";
+            color: Theme.secondary-text; font-size: Theme.font-sm;
+        }
+        Text {
+            x: 18px; y: 103px; width: 412px; height: 16px;
+            text: "erase → program → read back → commit";
+            color: Theme.muted-text; font-size: 13px;
+        }
+    }
+
+    Rectangle {
+        x: 122px; y: 332px; width: 236px; height: 58px;
+        background: start-area.pressed ? Theme.pressed-background : (root.running ? Theme.raised-background : root.accent);
+        border-radius: 10px;
+        Text {
+            width: parent.width; height: parent.height;
+            text: root.running ? "RUNNING..." : "START 128 KiB TEST";
+            color: root.running ? Theme.muted-text : #111820;
+            font-size: Theme.font-base; font-weight: 800;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+        start-area := TouchArea {
+            enabled: !root.running;
+            clicked => { root.start-requested(); }
+        }
+    }
+}

@@ -23,7 +23,9 @@ mod app_window {
     include!(env!("SLINT_UI_GENERATED"));
 }
 mod background;
+mod battery;
 mod brightness;
+mod flash_io;
 mod math;
 mod sched_mon;
 mod png_view;
@@ -616,7 +618,7 @@ pub(crate) fn uptime_millis() -> u128 {
     (ts.tv_sec as u128) * 1000 + (ts.tv_nsec as u128) / 1_000_000
 }
 
-fn uptime_micros() -> u128 {
+pub(crate) fn uptime_micros() -> u128 {
     let mut ts = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
@@ -778,8 +780,10 @@ fn run_slint_ui() -> IoResult<()> {
         sdcard::install(&ui, state.clone());
     });
     let _wifi_scan_timer = wifi::install(&ui);
+    let _battery_timer = battery::install(&ui);
     let _imu_timer = imu::install(&ui);
     let _sched_mon_timer = sched_mon::install(&ui);
+    let _flash_io_timer = flash_io::install(&ui);
     brightness::install(&ui);
 
     ui.on_debug(|msg| {

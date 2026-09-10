@@ -31,6 +31,7 @@ export component Launcher inherits Rectangle {
     property <bool> icon6-pressed: false;
     property <bool> icon7-pressed: false;
     property <bool> icon8-pressed: false;
+    property <bool> icon9-pressed: false;
 
     // Content area
     Rectangle {
@@ -113,6 +114,13 @@ export component Launcher inherits Rectangle {
                     accent: #f0bd62;
                     pressed: root.icon3-pressed;
                     clicked => { root.open-app(10); }
+                }
+                icon9 := DemoIcon {
+                    x: 168px; y: 220px;
+                    icon-text: Icons.monitoring; label: "电源管理";
+                    accent: #6fe0bd;
+                    pressed: root.icon9-pressed;
+                    clicked => { root.open-app(7); }
                 }
             }
 
@@ -208,7 +216,7 @@ export component Launcher inherits Rectangle {
             // col 1 (x=168): range [168+inset, 288-inset] = [180, 276]
             } else if c >= 180.0 && c < 276.0 {
                 if my >= 30.0 && my < 200.0 { root.open-app(8); }
-                else if my >= 220.0 && my < 390.0 { root.open-app(10); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(7); }
             // col 2 (x=312): range [312+inset, 432-inset] = [324, 420]
             } else if c >= 324.0 && c < 420.0 {
                 if my >= 30.0 && my < 200.0 { root.open-app(9); }
@@ -241,7 +249,7 @@ export component Launcher inherits Rectangle {
                 else if my >= 220.0 && my < 390.0 { root.icon3-pressed = true; }
             } else if c >= 180.0 && c < 276.0 {
                 if my >= 30.0 && my < 200.0 { root.icon1-pressed = true; }
-                else if my >= 220.0 && my < 390.0 { root.icon3-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon9-pressed = true; }
             } else if c >= 324.0 && c < 420.0 {
                 if my >= 30.0 && my < 200.0 { root.icon2-pressed = true; }
             }
@@ -268,5 +276,6 @@ export component Launcher inherits Rectangle {
         root.icon6-pressed = false;
         root.icon7-pressed = false;
         root.icon8-pressed = false;
+        root.icon9-pressed = false;
     }
 }
