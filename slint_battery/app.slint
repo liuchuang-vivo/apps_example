@@ -1,0 +1,259 @@
+// Battery status display for the 480x480 CO5300 AMOLED panel.
+// Keep this compatible with SoftwareRenderer::render_by_line: no Path items.
+
+component BatteryGauge inherits Rectangle {
+    in property <int> percent;
+    in property <int> voltage-mv;
+    in property <color> accent;
+    in property <bool> dark-mode;
+
+    width: 200px;
+    height: 100px;
+    border-width: 2px;
+    border-color: dark-mode ? #3a4a50 : #bdcac8;
+    border-radius: 12px;
+    background: dark-mode ? #121b20 : #ffffff;
+
+    // Battery fill — width scales with charge level.
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        border-radius: 9px;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: (parent.width * percent) / 100;
+            height: parent.height;
+            background: accent;
+            border-radius: 9px;
+        }
+    }
+
+    // Battery terminal nub.
+    Rectangle {
+        x: parent.width - 4px;
+        y: parent.height / 2 - 15px;
+        width: 6px;
+        height: 30px;
+        background: dark-mode ? #3a4a50 : #bdcac8;
+        border-radius: 2px;
+    }
+
+    // Percentage text centered on the gauge.
+    Text {
+        width: parent.width - 20px;
+        height: parent.height;
+        text: percent + "%";
+        color: percent > 40 ? #1a2a30 : #ffffff;
+        font-size: 28px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component MainWindow inherits Window {
+    width: 480px;
+    height: 480px;
+    background: dark-mode ? #0b1115 : #edf3f1;
+    default-font-size: 11px;
+
+    property <bool> dark-mode: true;
+    in-out property <int> battery-percent: 0;
+    in-out property <int> battery-voltage-mv: 0;
+    // Charging state from AXP2101 STATUS2 bits[7:5]:
+    // 0=standby, 1=charging(CC), 2=discharging, 3=CV, 4=done, 5=stopped
+    in-out property <int> battery-charging-state: 0;
+
+    // Color shifts from red (low) to green (full) as charge increases.
+    property <color> battery-accent-color:
+        root.battery-percent <= 20 ? #f06060 :
+        root.battery-percent <= 40 ? #f0bd62 :
+        root.battery-percent <= 80 ? #6fb6f2 : #6fe0bd;
+
+    // Whether the battery is actively charging (CC or CV phase).
+    property <bool> is-charging:
+        root.battery-charging-state == 1 || root.battery-charging-state == 3;
+
+    // Human-readable charging status label.
+    property <string> charging-label:
+        root.battery-charging-state == 1 ? "Charging" :
+        root.battery-charging-state == 2 ? "Discharging" :
+        root.battery-charging-state == 3 ? "Charging (CV)" :
+        root.battery-charging-state == 4 ? "Charge Done" :
+        root.battery-charging-state == 5 ? "Not Charging" :
+        "Standby";
+
+    // Header.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 80px;
+        background: dark-mode ? #111b20 : #ffffff;
+
+        Text {
+            x: 24px;
+            y: 12px;
+            width: 300px;
+            height: 30px;
+            text: "BATTERY STATUS";
+            color: dark-mode ? #edf4f1 : #172328;
+            font-size: 22px;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 24px;
+            y: 46px;
+            width: 300px;
+            height: 20px;
+            text: "ESP32-C6 Power Monitor";
+            color: dark-mode ? #728489 : #65777b;
+            font-size: 10px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        x: 0;
+        y: 79px;
+        width: parent.width;
+        height: 1px;
+        background: dark-mode ? #2a3a40 : #d3dfdc;
+    }
+
+    // Battery gauge centered on screen.
+    BatteryGauge {
+        x: 140px;
+        y: 140px;
+        percent: root.battery-percent;
+        voltage-mv: root.battery-voltage-mv;
+        accent: battery-accent-color;
+        dark-mode: root.dark-mode;
+    }
+
+    // Voltage readout.
+    Rectangle {
+        x: 80px;
+        y: 260px;
+        width: 320px;
+        height: 60px;
+        background: dark-mode ? #111b20 : #ffffff;
+        border-width: 1px;
+        border-color: dark-mode ? #2a3a40 : #d3dfdc;
+        border-radius: 10px;
+
+        Text {
+            x: 20px;
+            y: 0;
+            width: 100px;
+            height: parent.height;
+            text: "VOLTAGE";
+            color: dark-mode ? #7e999c : #6b7f7e;
+            font-size: 10px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 120px;
+            y: 0;
+            width: 180px;
+            height: parent.height;
+            text: (root.battery-voltage-mv / 1000) + " V";
+            color: dark-mode ? #edf4f1 : #172328;
+            font-size: 22px;
+            font-weight: 800;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    // Percentage readout.
+    Rectangle {
+        x: 80px;
+        y: 340px;
+        width: 320px;
+        height: 60px;
+        background: dark-mode ? #111b20 : #ffffff;
+        border-width: 1px;
+        border-color: dark-mode ? #2a3a40 : #d3dfdc;
+        border-radius: 10px;
+
+        Text {
+            x: 20px;
+            y: 0;
+            width: 100px;
+            height: parent.height;
+            text: "CHARGE";
+            color: dark-mode ? #7e999c : #6b7f7e;
+            font-size: 10px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 120px;
+            y: 0;
+            width: 180px;
+            height: parent.height;
+            text: root.battery-percent + "%";
+            color: battery-accent-color;
+            font-size: 22px;
+            font-weight: 800;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    // Status bar at bottom.
+    Rectangle {
+        x: 0;
+        y: 420px;
+        width: parent.width;
+        height: 60px;
+        background: dark-mode ? #111b20 : #ffffff;
+
+        // Lightning bolt shown when actively charging.
+        Text {
+            x: 24px;
+            y: 0;
+            width: 30px;
+            height: parent.height;
+            text: "+";
+            color: root.is-charging ? #f0d060 : transparent;
+            font-size: 20px;
+            font-weight: 800;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            visible: root.is-charging;
+        }
+
+        Text {
+            x: 56px;
+            y: 0;
+            width: parent.width - 80px;
+            height: parent.height;
+            text: root.battery-percent == 0 ? "Reading battery..." :
+                  root.is-charging ? root.charging-label + " - " + root.battery-percent + "%" :
+                  root.battery-charging-state == 4 ? "Charge Done" :
+                  root.battery-percent <= 20 ? "Low battery - charge soon" :
+                  root.battery-percent <= 40 ? "Battery moderate" :
+                  root.battery-percent <= 80 ? "Battery good" :
+                  "Battery full";
+            color: root.is-charging ? #f0d060 :
+                   dark-mode ? #728489 : #65777b;
+            font-size: 10px;
+            font-weight: 700;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
