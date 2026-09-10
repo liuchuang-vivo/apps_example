@@ -1,52 +1,81 @@
 // Launcher page with two tabs: 内核 and 外设
 // Compatible with SoftwareRenderer::render_by_line: no Path items.
+// All touch events handled by a single gesture layer that distinguishes
+// taps (Δx,Δy < 30px → activate icon) from swipes (→ swipe-xxx callbacks).
 
 import { DemoIcon } from "../components/demo-icon.slint";
+import { Icons } from "../components/icons.slint";
 import { NavTab } from "../components/nav-tab.slint";
 import { Theme } from "../components/theme.slint";
 
 export component Launcher inherits Rectangle {
     callback open-app(int);
+    callback swipe-left(float, float);
+    callback swipe-right(float, float);
+    callback swipe-up(float, float);
+    callback swipe-down(float, float);
+    callback debug(string);
     in-out property <int> current-tab: 0;
     in-out property <float> tab-offset: 0.0;
 
     background: transparent;
 
     property <int> active-tab: root.tab-offset > 0.5 ? 1 : 0;
+    // Pressed state for each icon — set on pointer-down, cleared on pointer-up
+    property <bool> icon0-pressed: false;
+    property <bool> icon1-pressed: false;
+    property <bool> icon2-pressed: false;
+    property <bool> icon3-pressed: false;
+    property <bool> icon4-pressed: false;
+    property <bool> icon5-pressed: false;
+    property <bool> icon6-pressed: false;
+    property <bool> icon7-pressed: false;
+    property <bool> icon8-pressed: false;
 
     // Content area
     Rectangle {
-        x: 0; y: 0; width: parent.width; height: 431px;
+        x: 0; y: 0; width: parent.width; height: 424px;
         clip: true;
 
-        // Swipe gesture for tab switching
+        // Single gesture layer — all touch goes through here.
         touch-gesture := TouchArea {
             x: 0; y: 0;
             width: parent.width;
             height: parent.height;
             property <length> start-x: 0;
+            property <length> start-y: 0;
             property <bool> tracking: false;
 
             pointer-event(event) => {
                 if event.kind == PointerEventKind.down {
                     self.start-x = self.mouse-x;
+                    self.start-y = self.mouse-y;
                     self.tracking = true;
+                    root.set-pressed(self.mouse-x / 1px, self.mouse-y / 1px);
                 }
                 if event.kind == PointerEventKind.up && self.tracking {
-                    if self.mouse-x < self.start-x - 60px && root.current-tab < 1 {
-                        root.current-tab = 1;
-                        root.tab-offset = 1.0;
+                    let dx = self.mouse-x - self.start-x;
+                    let dy = self.mouse-y - self.start-y;
+                    let abs-dx = dx < 0px ? -dx : dx;
+                    let abs-dy = dy < 0px ? -dy : dy;
+
+                    if abs-dx < 20px && abs-dy < 20px {
+                        // Tap — trigger the icon
+                        root.tap-at(self.mouse-x / 1px, self.mouse-y / 1px);
+                    } else if abs-dx >= abs-dy {
+                        if dx < 0px { root.swipe-left(dx / 1px, dy / 1px); }
+                        if dx > 0px { root.swipe-right(dx / 1px, dy / 1px); }
+                    } else {
+                        if dy < 0px { root.swipe-up(dx / 1px, dy / 1px); }
+                        if dy > 0px { root.swipe-down(dx / 1px, dy / 1px); }
                     }
-                    if self.mouse-x > self.start-x + 60px && root.current-tab > 0 {
-                        root.current-tab = 0;
-                        root.tab-offset = 0.0;
-                    }
+                    root.clear-pressed();
                     self.tracking = false;
                 }
             }
         }
 
-        // Tab pages switch immediately to avoid repeated full-area redraws.
+        // Tab pages
         Rectangle {
             x: -1 * root.tab-offset * 480px;
             y: 0;
@@ -57,64 +86,73 @@ export component Launcher inherits Rectangle {
             Rectangle {
                 x: 0; y: 0; width: 480px; height: parent.height;
 
-                DemoIcon {
-                    x: 24px;  y: 44px;
-                    icon-text: "≣"; label: "调度与监控";
+                icon0 := DemoIcon {
+                    x: 24px;  y: 30px;
+                    icon-text: Icons.monitoring; label: "调度与监控";
                     accent: #5ca9ff;
+                    pressed: root.icon0-pressed;
                     clicked => { root.open-app(6); }
                 }
-                DemoIcon {
-                    x: 168px; y: 44px;
-                    icon-text: "⏏"; label: "文件 IO";
+                icon1 := DemoIcon {
+                    x: 168px; y: 30px;
+                    icon-text: Icons.file-io; label: "文件 IO";
                     accent: #f0bd62;
+                    pressed: root.icon1-pressed;
                     clicked => { root.open-app(8); }
                 }
-                DemoIcon {
-                    x: 312px; y: 44px;
-                    icon-text: "◐"; label: "屏幕变色";
+                icon2 := DemoIcon {
+                    x: 312px; y: 30px;
+                    icon-text: Icons.palette; label: "屏幕变色";
                     accent: #f08091;
+                    pressed: root.icon2-pressed;
                     clicked => { root.open-app(9); }
                 }
-                DemoIcon {
-                    x: 24px;  y: 212px;
-                    icon-text: "☀"; label: "背光控制";
+                icon3 := DemoIcon {
+                    x: 24px;  y: 220px;
+                    icon-text: Icons.brightness; label: "背光控制";
                     accent: #f0bd62;
+                    pressed: root.icon3-pressed;
                     clicked => { root.open-app(10); }
                 }
-                }
+            }
 
             // 外设 tab page — 5 demos in 2x3 grid
             Rectangle {
                 x: 480px; y: 0; width: 480px; height: parent.height;
 
-                DemoIcon {
-                    x: 24px;  y: 44px;
-                    icon-text: "≋"; label: "Wi-Fi 扫描";
+                icon4 := DemoIcon {
+                    x: 24px;  y: 30px;
+                    icon-text: Icons.wifi; label: "Wi-Fi 扫描";
                     accent: #6fe0bd;
+                    pressed: root.icon4-pressed;
                     clicked => { root.open-app(11); }
                 }
-                DemoIcon {
-                    x: 168px; y: 44px;
-                    icon-text: "◈"; label: "IMU 传感器";
+                icon5 := DemoIcon {
+                    x: 168px; y: 30px;
+                    icon-text: Icons.sensors; label: "IMU 传感器";
                     accent: #f08091;
+                    pressed: root.icon5-pressed;
                     clicked => { root.open-app(12); }
                 }
-                DemoIcon {
-                    x: 312px; y: 44px;
-                    icon-text: "▤"; label: "SD 卡";
+                icon6 := DemoIcon {
+                    x: 312px; y: 30px;
+                    icon-text: Icons.sd-card; label: "SD 卡";
                     accent: #f0bd62;
+                    pressed: root.icon6-pressed;
                     clicked => { root.open-app(13); }
                 }
-                DemoIcon {
-                    x: 24px;  y: 212px;
-                    icon-text: "◎"; label: "HTTP GET";
+                icon7 := DemoIcon {
+                    x: 24px;  y: 220px;
+                    icon-text: Icons.download; label: "HTTP GET";
                     accent: #5ca9ff;
+                    pressed: root.icon7-pressed;
                     clicked => { root.open-app(14); }
                 }
-                DemoIcon {
-                    x: 168px; y: 212px;
-                    icon-text: "♪"; label: "音频";
+                icon8 := DemoIcon {
+                    x: 168px; y: 220px;
+                    icon-text: Icons.music; label: "音频";
                     accent: #cf8ff2;
+                    pressed: root.icon8-pressed;
                     clicked => { root.open-app(15); }
                 }
             }
@@ -123,7 +161,7 @@ export component Launcher inherits Rectangle {
 
     // Bottom nav bar
     Rectangle {
-        x: 0; y: 431px; width: parent.width; height: 56px;
+        x: 0; y: 424px; width: parent.width; height: 56px;
         background: Theme.surface-background;
 
         Rectangle {
@@ -141,5 +179,94 @@ export component Launcher inherits Rectangle {
             active: active-tab == 1; accent: #6fe0bd;
             clicked => { root.current-tab = 1; root.tab-offset = 1.0; }
         }
+    }
+
+    // ---- Icon grid data for hit-testing ----
+    // Each icon is 120×170px. Layout: columns at 24, 168, 312; rows at 30, 220.
+    // Kernel tab (page 0) uses first 4 slots, peripheral tab (page 1) uses 5 slots.
+    // Visible content inset: 12px on each side → effective hit width 96px.
+
+    callback tap-at(float, float);
+    callback set-pressed(float, float);
+    callback clear-pressed();
+
+    // Distinguish kernel vs peripheral tab based on the visible page.
+    property <int> active-page: root.tab-offset > 0.5 ? 1 : 0;
+
+    tap-at(mx, my) => {
+        let page = root.active-page;
+        // page 0: content-x = mx (offset-x = 0)
+        // page 1: content-x = mx + 480
+        let c = mx + root.tab-offset * 480.0;
+        let inset = 12.0;
+        root.debug("tap-at: mx=" + mx + " my=" + my + " c=" + c + " page=" + page);
+        if page == 0 {
+            // col 0 (x=24): range [24+inset, 144-inset] = [36, 132]
+            if c >= 36.0 && c < 132.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(6); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(10); }
+            // col 1 (x=168): range [168+inset, 288-inset] = [180, 276]
+            } else if c >= 180.0 && c < 276.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(8); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(10); }
+            // col 2 (x=312): range [312+inset, 432-inset] = [324, 420]
+            } else if c >= 324.0 && c < 420.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(9); }
+            }
+        } else {
+            // page 1: icons start at content-x 480
+            // col 0 (x=24): range [480+24+inset, 480+144-inset] = [516, 612]
+            if c >= 516.0 && c < 612.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(11); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(14); }
+            // col 1 (x=168): range [480+168+inset, 480+288-inset] = [660, 756]
+            } else if c >= 660.0 && c < 756.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(12); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(15); }
+            // col 2 (x=312): range [480+312+inset, 480+432-inset] = [804, 900]
+            } else if c >= 804.0 && c < 900.0 {
+                if my >= 30.0 && my < 200.0 { root.open-app(13); }
+            }
+        }
+    }
+
+    set-pressed(mx, my) => {
+        let page = root.active-page;
+        let c = mx + root.tab-offset * 480.0;
+        let inset = 12.0;
+        root.clear-pressed();
+        if page == 0 {
+            if c >= 36.0 && c < 132.0 {
+                if my >= 30.0 && my < 200.0 { root.icon0-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon3-pressed = true; }
+            } else if c >= 180.0 && c < 276.0 {
+                if my >= 30.0 && my < 200.0 { root.icon1-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon3-pressed = true; }
+            } else if c >= 324.0 && c < 420.0 {
+                if my >= 30.0 && my < 200.0 { root.icon2-pressed = true; }
+            }
+        } else {
+            if c >= 516.0 && c < 612.0 {
+                if my >= 30.0 && my < 200.0 { root.icon4-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon7-pressed = true; }
+            } else if c >= 660.0 && c < 756.0 {
+                if my >= 30.0 && my < 200.0 { root.icon5-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon8-pressed = true; }
+            } else if c >= 804.0 && c < 900.0 {
+                if my >= 30.0 && my < 200.0 { root.icon6-pressed = true; }
+            }
+        }
+    }
+
+    clear-pressed() => {
+        root.icon0-pressed = false;
+        root.icon1-pressed = false;
+        root.icon2-pressed = false;
+        root.icon3-pressed = false;
+        root.icon4-pressed = false;
+        root.icon5-pressed = false;
+        root.icon6-pressed = false;
+        root.icon7-pressed = false;
+        root.icon8-pressed = false;
     }
 }

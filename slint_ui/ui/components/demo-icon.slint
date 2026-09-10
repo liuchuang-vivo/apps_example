@@ -7,40 +7,43 @@ export component DemoIcon inherits Rectangle {
     in property <string> icon-text;
     in property <string> label;
     in property <color> accent: #5ca9ff;
+    in property <length> icon-offset-y: 0px;
 
-    width: 120px; height: 140px;
+    width: 120px; height: 170px;
 
     Rectangle {
-        x: 20px; y: 0;
-        width: 80px; height: 80px;
-        background: touch-area.pressed ? Theme.pressed-background : Theme.card-background;
+        x: 12px; y: 2px;
+        width: 96px; height: 96px;
+        background: root.pressed ? Theme.pressed-background : Theme.card-background;
         border-width: 1px;
-        border-color: touch-area.pressed ? root.accent : Theme.border-color;
+        border-color: root.pressed ? root.accent : Theme.border-color;
         border-radius: 16px;
 
         Text {
             width: parent.width; height: parent.height;
+            y: root.icon-offset-y;
             text: root.icon-text;
             color: root.accent;
-            font-size: 24px; font-weight: 800;
+            font-family: Theme.icon-font-family;
+            font-size: Theme.font-icon;
+            font-weight: 600;
             horizontal-alignment: center; vertical-alignment: center;
         }
     }
 
     Text {
-        x: 0; y: 92px;
-        width: parent.width; height: 48px;
+        x: 0; y: 108px;
+        width: parent.width; height: 62px;
         text: root.label;
         color: Theme.secondary-text;
-        font-size: 11px; font-weight: 600;
+        font-size: Theme.font-base; font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: top;
         overflow: elide;
     }
 
     callback clicked;
-    touch-area := TouchArea {
-        width: parent.width; height: parent.height;
-        clicked => { root.clicked(); }
-    }
+    in property <bool> pressed: false;
+    // TouchArea removed intentionally — the launcher's gesture layer handles
+    // all touch events and calls clicked() when a tap is detected on this icon.
 }

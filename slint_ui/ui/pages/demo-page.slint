@@ -7,24 +7,18 @@ import { Theme } from "../components/theme.slint";
 export component DemoPage inherits AppPage {
     in property <string> desc: "待实现";
 
-    Rectangle {
-        x: 20px; y: 98px;
-        width: 440px; height: 358px;
-        background: Theme.card-background;
-        border-width: 1px; border-color: Theme.border-color; border-radius: 8px;
+    // Placeholder content directly on screen-background
+    Text {
+        x: 0; y: 100px; width: parent.width; height: 40px;
+        text: root.desc;
+        color: Theme.secondary-text; font-size: Theme.font-lg; font-weight: 700;
+        horizontal-alignment: center; vertical-alignment: center;
+    }
 
-        Text {
-            x: 0; y: 100px; width: parent.width; height: 40px;
-            text: root.desc;
-            color: Theme.secondary-text; font-size: 18px; font-weight: 700;
-            horizontal-alignment: center; vertical-alignment: center;
-        }
-
-        Text {
-            x: 0; y: 150px; width: parent.width; height: 30px;
-            text: "⋮ ⋮ ⋮";
-            color: root.accent; font-size: 24px; font-weight: 800;
-            horizontal-alignment: center; vertical-alignment: center;
-        }
+    Text {
+        x: 0; y: 150px; width: parent.width; height: 30px;
+        text: "⋮ ⋮ ⋮";
+        color: root.accent; font-size: Theme.font-lg; font-weight: 800;
+        horizontal-alignment: center; vertical-alignment: center;
     }
 }

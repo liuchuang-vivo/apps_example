@@ -12,13 +12,14 @@ import { SdCardPage, SdFileEntry } from "./pages/sd-card-page.slint";
 import { WifiScanPage, WifiNetwork } from "./pages/wifi-scan-page.slint";
 import { ImuPage } from "./pages/imu-page.slint";
 import "../../slint_sdcard/assets/website-text.ttf";
+import "../resources/blueos-icons.ttf";
 import { WebsiteGlyphs } from "../../slint_sdcard/assets/website-glyphs.slint";
 
 export component MainWindow inherits Window {
     width: 480px;
     height: 480px;
     background: transparent;
-    default-font-family: "BlueOS Website Text";
+    default-font-family: Theme.text-font-family;
     default-font-size: 11px;
 
     in-out property <int> current-app: -1;  // -1 = launcher, 6+ = app pages
@@ -31,6 +32,9 @@ export component MainWindow inherits Window {
     in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
     callback wifi-page-active-changed(bool);
+    callback wifi-scroll-up();
+    callback wifi-scroll-down();
+    callback debug(string);
 
     in-out property <int> brightness: 100;
     callback set-brightness(int);
@@ -61,6 +65,8 @@ export component MainWindow inherits Window {
     in-out property <string> sd-path-text: "/data";
     in-out property <string> sd-status-text: "打开页面以读取 SD 卡";
     in-out property <int> sd-total-count: 0;
+    in-out property <int> sd-total-pages: 0;
+    in-out property <int> sd-current-page: 0;
     in-out property <int> sd-visible-count: 0;
     in-out property <int> sd-scroll-offset: 0;
     in-out property <bool> sd-read-error: false;
@@ -99,9 +105,13 @@ export component MainWindow inherits Window {
         current-tab <=> root.current-tab;
         tab-offset <=> root.tab-offset;
         open-app(app-id) => { root.current-app = app-id; }
+        swipe-left(dx, dy) => { if root.current-tab < 1 { root.current-tab = 1; root.tab-offset = 1.0; } }
+        swipe-right(dx, dy) => { if root.current-tab > 0 { root.current-tab = 0; root.tab-offset = 0.0; } }
+        debug(msg) => { root.debug(msg); }
     }
 
-    // App pages
+    // App pages — all inherit AppPage which provides swipe-left/right/up/down callbacks.
+    // Each page binds swipe-right to go-back() for consistent nav.
     if current-app == 6: SchedMonPage {
         cpu-cores <=> root.cpu-cores;
         cpu-usage-percent <=> root.cpu-usage-percent;
@@ -115,15 +125,19 @@ export component MainWindow inherits Window {
         task-names <=> root.task-names;
         task-hidden <=> root.task-hidden;
         refresh-tasks => { root.refresh-tasks(); }
-        go-back => { root.current-app = -1; }
+        swipe-right(dx, dy) => { root.current-app = -1; }
+        go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
-    if current-app == 7: DemoPage { title: "CPU/Memory"; accent: #6fe0bd;  go-back => { root.current-app = -1; } }
-    if current-app == 8: DemoPage { title: "文件 IO";    accent: #f0bd62;  go-back => { root.current-app = -1; } }
-    if current-app == 9: ScreenColorPage { go-back => { root.current-app = -1; } }
+    if current-app == 7: DemoPage { title: "CPU/Memory"; accent: #6fe0bd; swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
+    if current-app == 8: DemoPage { title: "文件 IO";    accent: #f0bd62; swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
+    if current-app == 9: ScreenColorPage { swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
     if current-app == 10: BrightnessPage {
         brightness <=> root.brightness;
         set-brightness(value) => { root.set-brightness(value); }
-        go-back => { root.current-app = -1; }
+        swipe-right(dx, dy) => { root.current-app = -1; }
+        swipe-up(dx, dy) => { root.brightness = min(root.brightness + 10, 100); root.set-brightness(root.brightness); }
+        swipe-down(dx, dy) => { root.brightness = max(root.brightness - 10, 30); root.set-brightness(root.brightness); }
+        go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
     // 外设 demo pages
     if current-app == 11: WifiScanPage {
@@ -132,7 +146,10 @@ export component MainWindow inherits Window {
         result-count <=> root.result-count;
         status-text <=> root.status-text;
         scan-requested => { root.scan-requested(); }
-        go-back => { root.current-app = -1; }
+        swipe-up(dx, dy) => { root.wifi-scroll-up(); }
+        swipe-down(dx, dy) => { root.wifi-scroll-down(); }
+        swipe-right(dx, dy) => { root.current-app = -1; }
+        go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
     if current-app == 12: ImuPage {
         accel-x <=> root.accel-x;
@@ -141,7 +158,9 @@ export component MainWindow inherits Window {
         gyro-x <=> root.gyro-x;
         gyro-y <=> root.gyro-y;
         gyro-z <=> root.gyro-z;
-        go-back => { root.current-app = -1; }
+        gesture-debug(msg) => { root.debug(msg); }
+        swipe-right(dx, dy) => { root.current-app = -1; }
+        go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
     if current-app == 13: SdCardPage {
         entries: root.sd-entries;
@@ -155,8 +174,8 @@ export component MainWindow inherits Window {
         text-title <=> root.sd-text-title;
         text-content <=> root.sd-text-content;
         text-page <=> root.sd-text-page;
-        text-has-previous <=> root.sd-text-has-previous;
-        text-has-next <=> root.sd-text-has-next;
+        total-pages <=> root.sd-total-pages;
+        current-page <=> root.sd-current-page;
         entry-selected(index) => { root.sd-entry-selected(index); }
         up-requested => { root.sd-up-requested(); }
         refresh-requested => { root.sd-refresh-requested(); }
@@ -169,12 +188,49 @@ export component MainWindow inherits Window {
         image-title <=> root.sd-image-title;
         image-status <=> root.sd-image-status;
         close-image => { root.sd-close-image(); }
-        go-back => {
-            root.sd-image-open = false;
-            root.sd-text-open = false;
-            root.current-app = -1;
+        debug(msg) => { root.debug(msg); }
+        gesture-debug(msg) => { root.debug(msg); }
+        swipe-right(dx, dy) => {
+            root.debug("GL swipe-right dx=" + dx + " dy=" + dy);
+            if root.sd-image-open {
+                root.sd-close-image();
+            } else if root.sd-text-open {
+                root.sd-close-text();
+            } else if root.sd-path-text != "/data" {
+                root.sd-up-requested();
+            } else {
+                root.current-app = -1;
+            }
         }
+        swipe-up(dx, dy) => {
+            root.debug("GL swipe-up dx=" + dx + " dy=" + dy);
+            if root.sd-text-open {
+                root.sd-next-text-page();
+            } else {
+                root.sd-scroll-down();
+            }
+        }
+        swipe-down(dx, dy) => {
+            root.debug("GL swipe-down dx=" + dx + " dy=" + dy);
+            if root.sd-text-open {
+                root.sd-previous-text-page();
+            } else {
+                root.sd-scroll-up();
+            }
+        }
+        go-back => {
+            if root.sd-image-open {
+                root.sd-close-image();
+            } else if root.sd-text-open {
+                root.sd-close-text();
+            } else if root.sd-path-text != "/data" {
+                root.sd-up-requested();
+            } else {
+                root.current-app = -1;
+            }
+        }
+        go-home => { root.current-app = -1; }
     }
-    if current-app == 14: DemoPage { title: "HTTP GET";  accent: #5ca9ff;  go-back => { root.current-app = -1; } }
-    if current-app == 15: DemoPage { title: "音频";      accent: #cf8ff2;  go-back => { root.current-app = -1; } }
+    if current-app == 14: DemoPage { title: "HTTP GET";  accent: #5ca9ff; swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
+    if current-app == 15: DemoPage { title: "音频";      accent: #cf8ff2; swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
 }
