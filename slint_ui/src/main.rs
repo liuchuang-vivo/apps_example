@@ -49,7 +49,7 @@ thread_local! {
 
 const LCD_H_RES: u16 = 480;
 const LCD_V_RES: u16 = 480;
-const FRAME_DELAY_MS: libc::c_uint = 16;
+const FRAME_DELAY_MS: libc::c_uint = 10;
 const UI_THREAD_STACK_SIZE: usize = 64 * 1024;
 // Batch sixteen RGB565 rows in the UI thread stack. This bounds renderer
 // scratch space to 15 KiB without consuming heap memory.
@@ -59,7 +59,6 @@ const RENDER_BATCH_BYTES: usize = RGB565_ROW_BYTES * RENDER_BATCH_ROWS;
 const TOUCH_REPORT_SIZE: usize = 12;
 const TOUCH_REPORT_VERSION: u8 = 1;
 const TOUCH_DEVICE_PATH: &[u8] = b"/dev/cst9220\0";
-const TOUCH_CONTROLLER_NAME: &str = "CST9220";
 // CST9220 firmware reports coordinates in the mounted panel's logical direction.
 // Do not mirror them again for the LCD controller's hardware scan direction.
 const TOUCH_FLIP_X: bool = false;
@@ -143,6 +142,24 @@ struct TouchFile {
     pressed: bool,
     last_x: f32,
     last_y: f32,
+    /// Consecutive tc=0 reports before releasing a pressed touch.
+    /// CST9220 firmware can briefly report no touch mid-swipe, so a small
+    /// debounce prevents spurious release events.
+    release_debounce: u8,
+    /// Monotonic ms timestamp of the last press, to measure press→release duration.
+    press_time: u128,
+}
+
+const RELEASE_DEBOUNCE_THRESHOLD: u8 = 8;
+
+// Set while a touch is pressed. Read by the IMU poller to suspend sensor
+// reads during gestures — a redraw triggered by new values takes ~500ms
+// of SPI IO and blocks the event loop, dropping the swipe's move events.
+// Kept in Rust (not a Slint property) so setting it does not dirty the scene.
+static TOUCH_PRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn touch_is_pressed() -> bool {
+    TOUCH_PRESSED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 impl TouchFile {
@@ -159,6 +176,8 @@ impl TouchFile {
             pressed: false,
             last_x: 0.0,
             last_y: 0.0,
+            release_debounce: 0,
+            press_time: 0,
         })
     }
 
@@ -197,33 +216,39 @@ impl TouchFile {
             Some(point) => {
                 let position = Self::logical_position(point);
                 if self.pressed {
+                    self.release_debounce = 0;
                     if position.x != self.last_x || position.y != self.last_y {
+                        println!("[TOUCH] move ({}, {})", position.x as i32, position.y as i32);
                         window.dispatch_event(WindowEvent::PointerMoved { position });
                     }
                 } else {
-                    println!(
-                        "{} press: raw=({}, {}), slint=({}, {})",
-                        TOUCH_CONTROLLER_NAME, point.x, point.y, position.x, position.y
-                    );
+                    println!("[TOUCH] press ({}, {}) t={}", position.x as i32, position.y as i32, uptime_millis());
+                    TOUCH_PRESSED.store(true, std::sync::atomic::Ordering::Relaxed);
                     window.dispatch_event(WindowEvent::PointerPressed {
                         position,
                         button: PointerEventButton::Left,
                     });
                     self.pressed = true;
+                    self.release_debounce = 0;
+                    self.press_time = uptime_millis();
                 }
                 self.last_x = position.x;
                 self.last_y = position.y;
             }
             None if self.pressed => {
-                println!(
-                    "{} release: slint=({}, {})",
-                    TOUCH_CONTROLLER_NAME, self.last_x, self.last_y
-                );
-                window.dispatch_event(WindowEvent::PointerReleased {
-                    position: slint::LogicalPosition::new(self.last_x, self.last_y),
-                    button: PointerEventButton::Left,
-                });
-                self.pressed = false;
+                self.release_debounce += 1;
+                println!("[TOUCH] tc=0 debounce={}", self.release_debounce);
+                if self.release_debounce >= RELEASE_DEBOUNCE_THRESHOLD {
+                    let dt = uptime_millis().saturating_sub(self.press_time);
+                    println!("[TOUCH] release at ({}, {}) t={} dt={}ms", self.last_x as i32, self.last_y as i32, uptime_millis(), dt);
+                    TOUCH_PRESSED.store(false, std::sync::atomic::Ordering::Relaxed);
+                    window.dispatch_event(WindowEvent::PointerReleased {
+                        position: slint::LogicalPosition::new(self.last_x, self.last_y),
+                        button: PointerEventButton::Left,
+                    });
+                    self.pressed = false;
+                    self.release_debounce = 0;
+                }
             }
             None => {}
         }
@@ -576,7 +601,7 @@ pub(crate) fn syscall_error(ret: libc::c_int) -> Error {
     }
 }
 
-fn uptime_millis() -> u128 {
+pub(crate) fn uptime_millis() -> u128 {
     let mut ts = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
@@ -734,7 +759,7 @@ impl slint::platform::Platform for BluekernelBackend {
                     }
                 });
 
-                let delay = if has_animations { FRAME_DELAY_MS } else { 30 };
+                let delay = FRAME_DELAY_MS;
                 let _ = librs::time::msleep(delay);
             } else {
                 let _ = librs::time::msleep(FRAME_DELAY_MS);
@@ -756,6 +781,11 @@ fn run_slint_ui() -> IoResult<()> {
     let _imu_timer = imu::install(&ui);
     let _sched_mon_timer = sched_mon::install(&ui);
     brightness::install(&ui);
+
+    ui.on_debug(|msg| {
+        println!("[DEBUG] {}", msg);
+    });
+
     ui.show()
         .map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?;
 
