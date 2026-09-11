@@ -337,6 +337,11 @@ impl WifiScanner {
             .collect();
         replace_network_rows(ui, page);
         ui.set_result_count(self.total_count as i32);
+        let per_page = MAX_VISIBLE_NETWORKS;
+        let total_pages = (self.results.len() + per_page - 1) / per_page;
+        ui.set_wifi_total_pages(total_pages as i32);
+        let current_page = self.scroll_offset / per_page + 1;
+        ui.set_wifi_current_page(current_page as i32);
     }
 
     fn can_scroll_down(&self) -> bool {

@@ -19,7 +19,8 @@ export component WifiScanPage inherits AppPage {
     in property <[WifiNetwork]> networks;
     in-out property <bool> scanning: false;
     in-out property <int> result-count: 0;
-    property <int> hidden-count: root.result-count - root.networks.length;
+    in-out property <int> current-page: 0;
+    in-out property <int> total-pages: 0;
     in-out property <string> status-text: "正在准备无线扫描";
     callback scan-requested();
 
@@ -107,12 +108,12 @@ export component WifiScanPage inherits AppPage {
         Text { x: 338px; y: 0; width: 98px; height: parent.height; text: network.signal-text; color: network.strength >= 3 ? #6fe0b8 : network.strength == 2 ? #d5b95e : #d07d72; font-size: Theme.font-sm; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; }
     }
 
-    // Hidden count hint
+    // Page indicator (mirrors the SD card page: "current/total")
     Text {
         x: 24px; y: 118px + 6 * 45px + 4px; width: 408px; height: 20px;
-        visible: root.hidden-count > 0;
-        text: "还有 " + root.hidden-count + " 个网络未显示";
+        visible: root.result-count > 0 && root.total-pages > 1;
+        text: root.current-page + "/" + root.total-pages;
         color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 400;
-        vertical-alignment: center;
+        horizontal-alignment: right; vertical-alignment: center;
     }
 }
