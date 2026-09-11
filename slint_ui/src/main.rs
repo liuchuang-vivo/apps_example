@@ -162,6 +162,14 @@ const RELEASE_DEBOUNCE_THRESHOLD: u8 = 8;
 // Kept in Rust (not a Slint property) so setting it does not dirty the scene.
 static TOUCH_PRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+// Set on a PointerMoved report and consumed by the render loop to force a
+// full-screen refresh for that frame. During a swipe the dirty region is a
+// scatter of partial x-ranges per line (~714 process_line calls), each taking
+// a synchronous SPI DMA; forcing the whole window collapses them onto the
+// batched full-row path (~30 DMA). Kept in Rust for the same reason as
+// TOUCH_PRESSED: setting a Slint property would itself dirty the scene.
+static TOUCH_MOVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub(crate) fn touch_is_pressed() -> bool {
     TOUCH_PRESSED.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -223,6 +231,7 @@ impl TouchFile {
                     self.release_debounce = 0;
                     if position.x != self.last_x || position.y != self.last_y {
                         window.dispatch_event(WindowEvent::PointerMoved { position });
+                        TOUCH_MOVED.store(true, std::sync::atomic::Ordering::Relaxed);
                     }
                 } else {
                     TOUCH_PRESSED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -699,7 +708,19 @@ impl slint::platform::Platform for BluekernelBackend {
                     state.active && state.pending.is_none()
                 });
                 let redrawn = if !png_active {
+                    // A move during a pressed touch means a swipe is in progress:
+                    // force the whole window dirty so every scanline lands on the
+                    // batched full-row path (~30 DMA) instead of per-range partial
+                    // writes (~714 DMA on swipe). Read without consuming here so
+                    // the flag survives no-redraw frames until a dirty frame
+                    // actually invokes the renderer; consume it inside the
+                    // callback, which only runs when there is work to draw.
+                    let force_full = TOUCH_MOVED.load(std::sync::atomic::Ordering::Relaxed);
                     window.draw_if_needed(|renderer| {
+                        if force_full {
+                            TOUCH_MOVED.store(false, std::sync::atomic::Ordering::Relaxed);
+                            renderer.force_screen_refresh();
+                        }
                         // Render line-by-line to avoid a full-frame RGB565 allocation. This saves
                         // substantial SRAM, at the cost of not supporting Slint `Path` items.
                         renderer.render_by_line(FbLineBuffer::new(
