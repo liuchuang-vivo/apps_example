@@ -24,14 +24,16 @@ use std::rc::Rc;
 // ---------------------------------------------------------------------------
 
 const PNG_MAX_DIMENSION: u32 = 480;
-const PNG_PANEL_X: usize = 105;
-const PNG_PANEL_Y: usize = 122;
+// Panel fills the viewer's visible area: below the 60 px title bar and above
+// the 56 px bottom nav (480 x 364), centered horizontally.
+const PNG_PANEL_X: usize = 0;
+const PNG_PANEL_Y: usize = 60;
 const PNG_DISPLAY_X: usize = PNG_PANEL_X;
 const PNG_DISPLAY_Y: usize = PNG_PANEL_Y;
 const PNG_DISPLAY_MAX_WIDTH: u32 = PNG_PANEL_W as u32;
 const PNG_DISPLAY_MAX_HEIGHT: u32 = PNG_PANEL_H as u32;
-const PNG_PANEL_W: usize = 270;
-const PNG_PANEL_H: usize = 270;
+const PNG_PANEL_W: usize = 480;
+const PNG_PANEL_H: usize = 364;
 const PNG_FRAMEBUFFER_BATCH_LINES: usize = 16;
 const PNG_OVERLAY_BG: u16 = to_rgb565(0x0b, 0x11, 0x15).0;
 const PNG_PANEL_BG: u16 = to_rgb565(0x05, 0x09, 0x0c).0;
@@ -44,8 +46,8 @@ const PNG_INPUT_BUFFER_SIZE: usize = 2 * 1024;
 
 // Maximum row bytes for worst-case PNG (480x RGB8 = 1440 bytes).
 const MAX_ROW_BYTES: usize = 1440;
-// Maximum display width in pixels (270 = the panel width).
-const MAX_DISPLAY_WIDTH: usize = 270;
+// Maximum display width in pixels (the panel width).
+const MAX_DISPLAY_WIDTH: usize = PNG_PANEL_W;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -96,8 +98,22 @@ pub(crate) fn inspect_png(path: &str) -> IoResult<(u32, u32)> {
     Ok((width, height))
 }
 
-pub(crate) fn fit_png_dimensions(_width: u32, _height: u32) -> (u32, u32) {
-    (PNG_DISPLAY_MAX_WIDTH, PNG_DISPLAY_MAX_HEIGHT)
+pub(crate) fn fit_png_dimensions(width: u32, height: u32) -> (u32, u32) {
+    // Scale to fit inside the panel while preserving aspect ratio (contain).
+    // scale = min(max_w / w, max_h / h); pick the smaller via cross products.
+    if width == 0 || height == 0 {
+        return (PNG_DISPLAY_MAX_WIDTH, PNG_DISPLAY_MAX_HEIGHT);
+    }
+    let max_w = PNG_DISPLAY_MAX_WIDTH as u64;
+    let max_h = PNG_DISPLAY_MAX_HEIGHT as u64;
+    let w = width as u64;
+    let h = height as u64;
+    // width-bound when max_w/w < max_h/h, i.e. max_w*h < max_h*w.
+    if max_w * h < max_h * w {
+        ((max_w) as u32, (h * max_w / w) as u32)
+    } else {
+        ((w * max_h / h) as u32, (max_h) as u32)
+    }
 }
 
 // ---------------------------------------------------------------------------

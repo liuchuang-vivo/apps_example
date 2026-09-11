@@ -29,12 +29,12 @@ export component ImageViewer inherits Rectangle {
         vertical-alignment: center;
     }
 
-    // Image area
+    // Image area background. The PNG itself is drawn by direct framebuffer
+    // writes (png_view.rs) over the 60..424 px visible band, scaled to fit
+    // (contain) and centered with aspect preserved. This rectangle only paints
+    // the backdrop behind the title row before the PNG blit lands.
     Rectangle {
-        x: 105px; y: 60px; width: 270px; height: 270px;
+        x: 0px; y: 40px; width: parent.width; height: parent.height - 40px;
         background: #05090c;
-        border-width: 1px;
-        border-color: #29334d;
-        border-radius: 0px;
     }
 }
