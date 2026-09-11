@@ -8,6 +8,9 @@ import { Theme } from "../components/theme.slint";
 export component SchedMonPage inherits AppPage {
     in property <int> cpu-cores: 1;
     in property <[float]> cpu-usage-percent;
+    in property <string> cpu-model: "esp32c6";
+    in property <string> cpu-isa: "rv32imac";
+    in property <string> cpu-mhz-text: "160 MHz";
     in property <float> mem-total-kb: 0.0;
     in property <float> mem-used-kb: 0.0;
     in property <float> mem-max-used-kb: 0.0;
@@ -17,83 +20,80 @@ export component SchedMonPage inherits AppPage {
     in property <[string]> task-prios;
     in property <[string]> task-names;
     in property <int> task-hidden: 0;
+    in property <int> task-total: 0;
     callback refresh-tasks();
 
-    title: "调度与监控";
+    title: "CPU与内存";
     accent: #5ca9ff;
 
-    // ====== 监控区块 ======
-    Rectangle { x: 24px; y: 76px; width: 6px; height: 18px; background: root.accent; border-radius: 3px; }
-    Text { x: 38px; y: 72px; width: 200px; height: 26px; text: "监控"; color: root.accent; font-size: Theme.font-base; font-weight: 700; vertical-alignment: center; }
+    // ====== 监控区块（两列，竖线分隔）======
+    // CPU column: x=24..216, Memory column: x=248..440, divider at x=232.
 
-    // CPU bar (single core ESP32-C6)
+    // ---- CPU column ----
+    Text { x: 24px;  y: 76px; width: 60px;  height: 20px; text: "CPU";            color: root.accent;  font-size: Theme.font-base; font-weight: 700; vertical-alignment: center; }
+    Text { x: 104px; y: 76px; width: 112px; height: 20px; text: "型号：" + root.cpu-model; color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 24px;  y: 99px; width: 100px; height: 20px; text: "架构";            color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
+    Text { x: 124px; y: 99px; width: 92px;  height: 20px; text: root.cpu-isa;      color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 24px;  y: 122px; width: 100px; height: 20px; text: "主频";           color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
+    Text { x: 124px; y: 122px; width: 92px;  height: 20px; text: root.cpu-mhz-text; color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 24px;  y: 148px; width: 42px;  height: 16px; text: "利用率";          color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
     Rectangle {
-        x: 24px; y: 106px; width: 432px; height: 22px;
-        Text { x: 0px; y: 0px; width: 34px; height: 22px; text: "CPU"; color: root.accent; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; }
-        Rectangle {
-            x: 38px; y: 4px; width: 334px; height: 14px;
-            background: Theme.raised-background; border-radius: 7px;
-            Rectangle {
-                x: 0px; y: 0px; width: parent.width * root.cpu-usage-percent[0] / 100.0; height: 14px;
-                background: root.accent; border-radius: 7px;
-            }
-        }
-        Text { x: 378px; y: 0px; width: 54px; height: 22px; text: Math.clamp(Math.round(root.cpu-usage-percent[0]), 0, 100) + "%"; color: Theme.primary-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: left; }
+        x: 72px; y: 151px; width: 100px; height: 10px;
+        background: Theme.raised-background; border-radius: 5px;
+        Rectangle { x: 0px; y: 0px; width: parent.width * root.cpu-usage-percent[0] / 100.0; height: 10px; background: root.accent; border-radius: 5px; }
     }
+    Text { x: 176px; y: 148px; width: 40px; height: 16px; text: Math.clamp(Math.round(root.cpu-usage-percent[0]), 0, 100) + "%"; color: root.accent; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: right; }
 
-    // Memory bar
+    // ---- Divider ----
+    Rectangle { x: 232px; y: 76px; width: 1px; height: 96px; background: Theme.divider-color; }
+
+    // ---- Memory column ----
+    Text { x: 248px; y: 76px;  width: 60px;  height: 20px; text: "内存";                              color: #f0bd62;       font-size: Theme.font-base; font-weight: 700; vertical-alignment: center; }
+    Text { x: 328px; y: 76px;  width: 112px; height: 20px; text: "总计：" + root.mem-total-kb + " kB"; color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 248px; y: 99px;  width: 100px; height: 20px; text: "已用";                              color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
+    Text { x: 348px; y: 99px;  width: 92px;  height: 20px; text: root.mem-used-kb + " kB";          color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 248px; y: 122px; width: 100px; height: 20px; text: "峰值";                              color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
+    Text { x: 348px; y: 122px; width: 92px;  height: 20px; text: root.mem-max-used-kb + " kB";      color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; horizontal-alignment: right; }
+    Text { x: 248px; y: 148px; width: 42px;  height: 16px; text: "使用率";                            color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
     Rectangle {
-        x: 24px; y: 132px; width: 432px; height: 22px;
-        Text { x: 0px; y: 0px; width: 34px; height: 22px; text: "内存"; color: #f0bd62; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; }
-        Rectangle {
-            x: 38px; y: 4px; width: 334px; height: 14px;
-            background: Theme.raised-background; border-radius: 7px;
-            Rectangle {
-                x: 0px; y: 0px; width: parent.width * (root.mem-used-kb / root.mem-total-kb); height: 14px;
-                background: #f0bd62; border-radius: 7px;
-            }
-        }
-        Text { x: 378px; y: 0px; width: 54px; height: 22px; text: (root.mem-total-kb > 0 ? Math.clamp(Math.round(root.mem-used-kb / root.mem-total-kb * 100), 0, 100) : 0) + "%"; color: Theme.primary-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: left; }
+        x: 296px; y: 151px; width: 100px; height: 10px;
+        background: Theme.raised-background; border-radius: 5px;
+        Rectangle { x: 0px; y: 0px; width: parent.width * (root.mem-total-kb > 0 ? root.mem-used-kb / root.mem-total-kb : 0); height: 10px; background: #f0bd62; border-radius: 5px; }
     }
-
-    // Memory values row: 总计 / 已用 / 峰值
-    Text { x: 24px; y: 160px; width: 40px; height: 16px; text: "总计"; color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 60px; y: 160px; width: 110px; height: 16px; text: root.mem-total-kb + " kB"; color: Theme.primary-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 180px; y: 160px; width: 40px; height: 16px; text: "已用"; color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 216px; y: 160px; width: 110px; height: 16px; text: root.mem-used-kb + " kB"; color: Theme.primary-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 336px; y: 160px; width: 40px; height: 16px; text: "峰值"; color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 372px; y: 160px; width: 90px; height: 16px; text: root.mem-max-used-kb + " kB"; color: Theme.primary-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    Text { x: 400px; y: 148px; width: 40px; height: 16px; text: (root.mem-total-kb > 0 ? Math.clamp(Math.round(root.mem-used-kb / root.mem-total-kb * 100), 0, 100) : 0) + "%"; color: #f0bd62; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; horizontal-alignment: right; }
 
     // ====== 任务列表区块 ======
-    Rectangle { x: 24px; y: 202px; width: 6px; height: 18px; background: #86efac; border-radius: 3px; }
-    Text { x: 38px; y: 198px; width: 200px; height: 26px; text: "任务列表"; color: #86efac; font-size: Theme.font-base; font-weight: 700; vertical-alignment: center; }
+    Rectangle { x: 24px; y: 182px; width: 6px; height: 18px; background: #86efac; border-radius: 3px; }
+    Text { x: 38px; y: 178px; width: 200px; height: 26px; text: "任务列表"; color: #86efac; font-size: Theme.font-base; font-weight: 700; vertical-alignment: center; }
+    Text { x: 130px; y: 182px; width: 100px; height: 22px; text: "1-" + (root.task-total - root.task-hidden) + "/" + root.task-total + " 项"; color: Theme.muted-text; font-size: Theme.font-sm; vertical-alignment: center; }
 
-    // ---- 等宽列表 ----
-    // Column headers — now 20px tall for font-sm (16px)
-    Text { x: 24px;  y: 232px; width: 44px;  height: 20px; text: "TID";    color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 70px;  y: 232px; width: 64px;  height: 20px; text: "类型";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 136px; y: 232px; width: 48px;  height: 20px; text: "状态";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 186px; y: 232px; width: 54px;  height: 20px; text: "优先级"; color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
-    Text { x: 242px; y: 232px; width: 200px; height: 20px; text: "名称";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    // Column headers (absolute x = 24 + relative x):
+    //   TID 0/40  类型 42/56  状态 100/80  优先级 182/40  名称 224/172
+    Text { x: 24px;  y: 212px; width: 40px;  height: 20px; text: "TID";    color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    Text { x: 72px;  y: 212px; width: 56px;  height: 20px; text: "类型";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    Text { x: 130px; y: 212px; width: 80px;  height: 20px; text: "状态";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    Text { x: 216px; y: 212px; width: 56px;  height: 20px; text: "优先级"; color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
+    Text { x: 284px; y: 212px; width: 148px; height: 20px; text: "名称";   color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700; vertical-alignment: center; }
 
-    // Task rows — 8 rows, each 22px tall (was 18px — too tight for 16px font)
-    for idx in 4 : Rectangle {
-        x: 24px; y: 254px + idx * 22px;
+    // Task rows — 8 visible rows, 22px each (234..410).
+    for idx in 8 : Rectangle {
+        x: 24px; y: 234px + idx * 22px;
         width: 432px; height: 20px;
 
-        Text { x: 0px;   width: 44px;  height: parent.height; text: root.task-tids[idx];   color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
-        Text { x: 46px;  width: 64px;  height: parent.height; text: root.task-types[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
-        Text { x: 112px; width: 48px;  height: parent.height; text: root.task-states[idx]; color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
-        Text { x: 162px; width: 54px;  height: parent.height; text: root.task-prios[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
-        Text { x: 218px; width: 200px; height: parent.height; text: root.task-names[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
+        Text { x: 0px;   width: 40px;  height: parent.height; text: root.task-tids[idx];   color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
+        Text { x: 48px;  width: 56px;  height: parent.height; text: root.task-types[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
+        Text { x: 106px; width: 80px;  height: parent.height; text: root.task-states[idx]; color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
+        Text { x: 192px; width: 56px;  height: parent.height; text: root.task-prios[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; }
+        Text { x: 260px; width: 172px; height: parent.height; text: root.task-names[idx];  color: Theme.secondary-text; font-size: Theme.font-sm; font-weight: 600; vertical-alignment: center; overflow: elide; }
     }
 
-    // "省略 xx 个任务"
+    // "还有 N 个任务" — tasks below the visible window.
     Text {
-        x: 24px; y: 342px; width: 408px; height: 20px;
+        x: 24px; y: 414px; width: 432px; height: 14px;
         visible: root.task-hidden > 0;
         text: "还有 " + root.task-hidden + " 个任务";
         color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 400;
         vertical-alignment: center;
+        horizontal-alignment: right;
     }
 }

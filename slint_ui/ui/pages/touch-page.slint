@@ -1,0 +1,65 @@
+// Touch coordinate inspector.
+
+import { AppPage } from "../components/app-page.slint";
+import { Theme } from "../components/theme.slint";
+
+export component TouchPage inherits AppPage {
+    title: "屏幕触控";
+    accent: #6fe0bd;
+    gesture-enabled: false;
+
+    property <length> current-x: 0px;
+    property <length> current-y: 0px;
+    property <bool> tracking: false;
+
+    Rectangle {
+        x: 0px; y: 0px;
+        width: parent.width; height: 424px;
+        background: Theme.screen-background;
+        clip: true;
+
+        TouchArea {
+            x: 0px; y: 0px;
+            width: parent.width; height: parent.height;
+
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    root.current-x = self.mouse-x;
+                    root.current-y = self.mouse-y;
+                    root.tracking = true;
+                }
+                if event.kind == PointerEventKind.move && root.tracking {
+                    root.current-x = self.mouse-x;
+                    root.current-y = self.mouse-y;
+                }
+                if event.kind == PointerEventKind.up && root.tracking {
+                    root.tracking = false;
+                }
+            }
+        }
+
+        Rectangle {
+            x: root.current-x - 7px;
+            y: root.current-y - 7px;
+            width: 14px; height: 14px;
+            background: Theme.accent-color;
+            border-radius: 7px;
+            visible: root.tracking;
+        }
+
+    }
+
+    Rectangle {
+        x: 0px; y: 0px; width: parent.width; height: 60px;
+        background: Theme.screen-background;
+    }
+
+    Text {
+        x: 34px; y: 8px; width: 300px; height: 18px;
+        text: root.tracking
+            ? "X " + (root.current-x / 1px) + "   Y " + (root.current-y / 1px)
+            : "—";
+        color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700;
+        vertical-alignment: center;
+    }
+}

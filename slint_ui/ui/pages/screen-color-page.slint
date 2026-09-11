@@ -1,51 +1,36 @@
-// Global screen-theme control.
-// The light palette comes from the colleague's original Slint example.
+// LCD primary-color test page.
 
 import { AppPage } from "../components/app-page.slint";
 import { Theme } from "../components/theme.slint";
 
 export component ScreenColorPage inherits AppPage {
-    title: "屏幕变色";
-    accent: Theme.accent-color;
+    title: "LCM 三基色";
+    accent: #ffffff;
 
-    // Color preview card
+    property <int> selected-color: 0;
+    property <color> test-color: selected-color == 0 ? #ff0000 : selected-color == 1 ? #00ff00 : #0000ff;
+
+    // The content area shows the selected LCM primary color directly.
     Rectangle {
-        x: 100px; y: 136px; width: 280px; height: 76px;
-        background: Theme.screen-background;
-        border-width: 1px; border-color: Theme.border-color; border-radius: 10px;
+        x: 0px; y: 60px;
+        width: parent.width; height: 364px;
+        background: root.test-color;
 
-        Rectangle { x: 14px; y: 14px; width: 48px; height: 48px; background: Theme.accent-color; border-radius: 8px; }
-        Text {
-            x: 76px; y: 0; width: 180px; height: parent.height;
-            text: Theme.theme-name == "vivo" ? "深蓝" : "深青";
-            color: Theme.primary-text; font-size: Theme.font-lg; font-weight: 800;
-            vertical-alignment: center;
+        // One button cycles through red, green, and blue in order.
+        Rectangle {
+            x: 122px; y: 194px; width: 236px; height: 58px;
+            background: next-color-area.pressed ? Theme.pressed-background : Theme.raised-background;
+            border-radius: 10px;
+            Text {
+                width: parent.width; height: parent.height;
+                text: root.selected-color == 0 ? "切换到绿色" : root.selected-color == 1 ? "切换到蓝色" : "切换到红色";
+                color: #ffffff; font-size: Theme.font-base; font-weight: 800;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            next-color-area := TouchArea {
+                width: parent.width; height: parent.height;
+                clicked => { root.selected-color = root.selected-color == 2 ? 0 : root.selected-color + 1; }
+            }
         }
-    }
-
-    // Switch button
-    Rectangle {
-        x: 100px; y: 236px; width: 280px; height: 58px;
-        background: Theme.raised-background;
-        border-width: 1px; border-color: Theme.border-color; border-radius: 12px;
-
-        Text {
-            width: parent.width; height: parent.height;
-            text: Theme.theme-name == "vivo" ? "切换到深青" : "切换到深蓝";
-            color: Theme.accent-color; font-size: Theme.font-lg; font-weight: 800;
-            horizontal-alignment: center; vertical-alignment: center;
-        }
-
-        switch-area := TouchArea {
-            width: parent.width; height: parent.height;
-            clicked => { Theme.theme-name = Theme.theme-name == "default" ? "vivo" : "default"; }
-        }
-    }
-
-    Text {
-        x: 40px; y: 322px; width: 400px; height: 28px;
-        text: "配色会应用到主页和所有功能页面";
-        color: Theme.muted-text; font-size: Theme.font-base;
-        horizontal-alignment: center; vertical-alignment: center;
     }
 }

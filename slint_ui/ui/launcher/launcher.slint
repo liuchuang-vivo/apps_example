@@ -1,11 +1,10 @@
-// Launcher page with two tabs: 内核 and 外设
+// Phone-style launcher with two swipeable pages.
 // Compatible with SoftwareRenderer::render_by_line: no Path items.
 // All touch events handled by a single gesture layer that distinguishes
 // taps (Δx,Δy < 30px → activate icon) from swipes (→ swipe-xxx callbacks).
 
 import { DemoIcon } from "../components/demo-icon.slint";
 import { Icons } from "../components/icons.slint";
-import { NavTab } from "../components/nav-tab.slint";
 import { Theme } from "../components/theme.slint";
 
 export component Launcher inherits Rectangle {
@@ -20,7 +19,6 @@ export component Launcher inherits Rectangle {
 
     background: transparent;
 
-    property <int> active-tab: root.tab-offset > 0.5 ? 1 : 0;
     // Pressed state for each icon — set on pointer-down, cleared on pointer-up
     property <bool> icon0-pressed: false;
     property <bool> icon1-pressed: false;
@@ -32,10 +30,11 @@ export component Launcher inherits Rectangle {
     property <bool> icon7-pressed: false;
     property <bool> icon8-pressed: false;
     property <bool> icon9-pressed: false;
+    property <bool> icon10-pressed: false;
 
-    // Content area
+    // Content area. Page changes are driven by horizontal swipes.
     Rectangle {
-        x: 0; y: 0; width: parent.width; height: 424px;
+        x: 0; y: 0; width: parent.width; height: parent.height;
         clip: true;
 
         // Single gesture layer — all touch goes through here.
@@ -83,34 +82,34 @@ export component Launcher inherits Rectangle {
             width: 960px;
             height: parent.height;
 
-            // 内核 tab page — 4 demos in 2x2 grid
+            // First page — 6 demos in a 3x2 grid.
             Rectangle {
                 x: 0; y: 0; width: 480px; height: parent.height;
 
                 icon0 := DemoIcon {
                     x: 24px;  y: 30px;
-                    icon-text: Icons.monitoring; label: "调度与监控";
+                    icon-text: Icons.monitoring; label: "CPU与内存";
                     accent: #5ca9ff;
                     pressed: root.icon0-pressed;
                     clicked => { root.open-app(6); }
                 }
                 icon1 := DemoIcon {
                     x: 168px; y: 30px;
-                    icon-text: Icons.file-io; label: "文件 IO";
+                    icon-text: Icons.file-io; label: "Flash 读写";
                     accent: #f0bd62;
                     pressed: root.icon1-pressed;
                     clicked => { root.open-app(8); }
                 }
                 icon2 := DemoIcon {
                     x: 312px; y: 30px;
-                    icon-text: Icons.palette; label: "屏幕变色";
+                    icon-text: Icons.palette; label: "LCM 三基色";
                     accent: #f08091;
                     pressed: root.icon2-pressed;
                     clicked => { root.open-app(9); }
                 }
                 icon3 := DemoIcon {
                     x: 24px;  y: 220px;
-                    icon-text: Icons.brightness; label: "背光控制";
+                    icon-text: Icons.brightness; label: "屏幕亮度";
                     accent: #f0bd62;
                     pressed: root.icon3-pressed;
                     clicked => { root.open-app(10); }
@@ -122,9 +121,16 @@ export component Launcher inherits Rectangle {
                     pressed: root.icon9-pressed;
                     clicked => { root.open-app(7); }
                 }
+                icon10 := DemoIcon {
+                    x: 312px; y: 220px;
+                    icon-text: Icons.touch; label: "屏幕触控";
+                    accent: #5ca9ff;
+                    pressed: root.icon10-pressed;
+                    clicked => { root.open-app(16); }
+                }
             }
 
-            // 外设 tab page — 5 demos in 2x3 grid
+            // Second page — 5 demos in a 3x2 grid.
             Rectangle {
                 x: 480px; y: 0; width: 480px; height: parent.height;
 
@@ -167,26 +173,14 @@ export component Launcher inherits Rectangle {
         }
     }
 
-    // Bottom nav bar
-    Rectangle {
-        x: 0; y: 424px; width: parent.width; height: 56px;
-        background: Theme.surface-background;
-
-        Rectangle {
-            x: 0; y: 0; width: parent.width; height: 1px;
-            background: Theme.divider-color;
-        }
-
-        NavTab {
-            x: 0; y: 1px; label: "◉ 内核";
-            active: active-tab == 0; accent: #5ca9ff;
-            clicked => { root.current-tab = 0; root.tab-offset = 0.0; }
-        }
-        NavTab {
-            x: 240px; y: 1px; label: "◉ 外设";
-            active: active-tab == 1; accent: #6fe0bd;
-            clicked => { root.current-tab = 1; root.tab-offset = 1.0; }
-        }
+    // Non-interactive page indicator: one solid dot and one hollow dot.
+    for idx in 2 : Rectangle {
+        x: 222px + idx * 24px; y: 438px;
+        width: 12px; height: 12px;
+        background: root.active-page == idx ? Theme.primary-text : transparent;
+        border-width: root.active-page == idx ? 0px : 2px;
+        border-color: Theme.primary-text;
+        border-radius: 6px;
     }
 
     // ---- Icon grid data for hit-testing ----
@@ -220,6 +214,7 @@ export component Launcher inherits Rectangle {
             // col 2 (x=312): range [312+inset, 432-inset] = [324, 420]
             } else if c >= 324.0 && c < 420.0 {
                 if my >= 30.0 && my < 200.0 { root.open-app(9); }
+                else if my >= 220.0 && my < 390.0 { root.open-app(16); }
             }
         } else {
             // page 1: icons start at content-x 480
@@ -252,6 +247,7 @@ export component Launcher inherits Rectangle {
                 else if my >= 220.0 && my < 390.0 { root.icon9-pressed = true; }
             } else if c >= 324.0 && c < 420.0 {
                 if my >= 30.0 && my < 200.0 { root.icon2-pressed = true; }
+                else if my >= 220.0 && my < 390.0 { root.icon10-pressed = true; }
             }
         } else {
             if c >= 516.0 && c < 612.0 {
@@ -277,5 +273,6 @@ export component Launcher inherits Rectangle {
         root.icon7-pressed = false;
         root.icon8-pressed = false;
         root.icon9-pressed = false;
+        root.icon10-pressed = false;
     }
 }

@@ -29,18 +29,14 @@ use std::io::{Error, ErrorKind, Result as IoResult};
 use std::rc::Rc;
 
 // Board reaches the public APIs through a plain-HTTP reverse proxy on the host
-// (kernel has TCP but no DNS/TLS). See AGENTS.md "联网 Slint app".
-const HTTP_HOST_IP: [u8; 4] = [10, 171, 198, 12];
-const TX_PORT: u16 = 18085;
-const TX_HOST: &str = "qt.gtimg.cn";
-const TX_PATH: &str = "/q=hf_GC,hf_SI";
-const TIME_PORT: u16 = 18086;
-const TIME_PATH: &str = "/xlive/open-interface/v1/rtc/getTimestamp";
-const TIME_HOST: &str = "api.live.bilibili.com";
+// (kernel has TCP but no DNS/TLS).
+const HTTP_PROXY_IP: [u8; 4] = [10, 171, 198, 12];
+const HTTP_PROXY_PORT: u16 = 18085;
+const HTTP_HOST: &str = "qt.gtimg.cn";
+const HTTP_PATH: &str = "/q=hf_XAU,hf_XAG";
 
 const TICK_MS: u64 = 1000; // per-second wall-clock tick
 const REFRESH_MS: u128 = 60 * 1000; // price refresh cadence
-const TIME_RESYNC_MS: u128 = 10 * 60 * 1000; // time drift re-sync cadence
 const FIRST_FETCH_DELAY_MS: u128 = 1500; // let the network settle after boot
 
 const MAX_BODY: usize = 4 * 1024;
@@ -91,6 +87,11 @@ impl Clock {
 
 struct TcpSocket {
     fd: libc::c_int,
+}
+
+fn config_str(value: &[u8]) -> &str {
+    let value = value.split(|&byte| byte == 0).next().unwrap_or(value);
+    core::str::from_utf8(value).unwrap_or("")
 }
 
 impl TcpSocket {
@@ -170,7 +171,7 @@ impl Drop for TcpSocket {
     }
 }
 
-fn http_get(ip: [u8; 4], port: u16, path: &str, host: &str) -> IoResult<(u16, Vec<u8>)> {
+fn http_get(ip: [u8; 4], port: u16, path: &str, host: &str) -> IoResult<(u16, String, Vec<u8>)> {
     let mut sock = TcpSocket::connect(ip, port)?;
     let request = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: slint_ui/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n",
@@ -196,7 +197,7 @@ fn http_get(ip: [u8; 4], port: u16, path: &str, host: &str) -> IoResult<(u16, Ve
         .ok_or_else(|| Error::new(ErrorKind::InvalidData, "no HTTP head"))?;
     let head = &raw[..sep];
     let mut body = raw[sep + 4..].to_vec();
-    let head_str = std::string::String::from_utf8_lossy(head);
+    let head_str = std::string::String::from_utf8_lossy(head).into_owned();
     let status = head_str
         .lines()
         .next()
@@ -212,7 +213,7 @@ fn http_get(ip: [u8; 4], port: u16, path: &str, host: &str) -> IoResult<(u16, Ve
         body.truncate(MAX_BODY);
         body
     };
-    Ok((status, body_bytes))
+    Ok((status, head_str, body_bytes))
 }
 
 fn dechunk(data: &[u8], cap: usize) -> IoResult<Vec<u8>> {
@@ -285,21 +286,39 @@ fn extract_tencent_price(body: &[u8], key: &str) -> Option<std::string::String> 
     Some(raw.to_string())
 }
 
-/// Extract `"timestamp":1788828302` from bilibili JSON (u64 unix seconds).
-fn extract_timestamp(json: &[u8]) -> Option<u64> {
-    let pos = find_subslice(json, b"\"timestamp\":")?;
-    let mut i = pos + b"\"timestamp\":".len();
-    while i < json.len() && (json[i] == b' ' || json[i] == b'\t') {
-        i += 1;
-    }
-    let start = i;
-    while i < json.len() && json[i].is_ascii_digit() {
-        i += 1;
-    }
-    if i == start {
-        return None;
-    }
-    core::str::from_utf8(&json[start..i]).ok()?.parse().ok()
+/// Parse an RFC 1123 `Date` header (e.g. "date: Thu, 10 Sep 2026 07:21:36 GMT")
+/// into unix seconds. Used to derive Beijing time from the price response so
+/// the demo needs only one HTTP request.
+fn parse_date_header(head: &str) -> Option<u64> {
+    let line = head
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("date:"))?;
+    let colon = line.find(':')?;
+    // "Thu, 10 Sep 2026 07:21:36 GMT"
+    let rest = line[colon + 1..].trim();
+    let mut parts = rest.split_whitespace();
+    let _ = parts.next()?; // weekday "Thu," — ignored, date is authoritative
+    let day: u64 = parts.next()?.trim_end_matches(',').parse().ok()?;
+    let month = parts.next()?;
+    let year: u64 = parts.next()?.parse().ok()?;
+    let time = parts.next()?;
+    let mut t = time.split(':');
+    let hh: u64 = t.next()?.parse().ok()?;
+    let mm: u64 = t.next()?.parse().ok()?;
+    let ss: u64 = t.next()?.parse().ok()?;
+    let m = match month {
+        "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
+        "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
+        _ => return None,
+    };
+    // Days since 1970-01-01 (UTC). Valid for 2001-2099 (no leap-century edge).
+    let y = if m <= 2 { year - 1 } else { year };
+    let era = y / 100;
+    let yoe = y - era * 100;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days_since_epoch = era as u64 * 146_097 + doe as u64 - 719_468;
+    Some(days_since_epoch * 86_400 + hh * 3600 + mm * 60 + ss)
 }
 
 // ---------------------------------------------------------------------------
@@ -307,8 +326,6 @@ fn extract_timestamp(json: &[u8]) -> Option<u64> {
 // its own, so the page connects to the hotspot before sending TCP traffic.
 // ---------------------------------------------------------------------------
 
-const WIFI_SSID: &str = "bluekernel1";
-const WIFI_PASSPHRASE: &str = "12345678";
 const WIFI_CONNECT_GRACE_MS: u128 = 3_000; // association grace period after connect ioctl
 
 #[derive(Clone, Copy, PartialEq)]
@@ -393,9 +410,8 @@ struct MetalsFetcher {
     clock: Clock,
     started_at: u128,
     last_refresh_ms: u128,
-    last_resync_ms: u128,
     last_minute: Option<std::string::String>,
-    refresh_requested: bool,
+    refreshing: bool, // fetch trigger + UI "in progress" flag (one bool)
     active: bool, // only fetch while the Metals page is on screen
     wifi_state: WifiState,
     ctl_socket: Option<libc::c_int>,
@@ -408,25 +424,24 @@ impl MetalsFetcher {
             clock: Clock::new(),
             started_at: now,
             last_refresh_ms: 0,
-            last_resync_ms: 0,
             last_minute: None,
-            // Trigger the first fetch after the page becomes active.
-            refresh_requested: true,
+            refreshing: false,
             active: false,
             wifi_state: WifiState::Idle,
             ctl_socket: None,
         }
     }
 
-    fn request_refresh(&mut self) {
-        self.refresh_requested = true;
+    fn request_refresh(&mut self, ui: &MainWindow) {
+        self.refreshing = true;
+        ui.set_metals_refreshing(true);
     }
 
-    fn set_active(&mut self, active: bool) {
-        // Entering the page triggers an immediate refresh + time re-sync.
+    fn set_active(&mut self, ui: &MainWindow, active: bool) {
+        // Entering the page triggers an immediate refresh.
         if active && !self.active {
-            self.refresh_requested = true;
-            self.last_resync_ms = 0;
+            self.refreshing = true;
+            ui.set_metals_refreshing(true);
             if self.wifi_state == WifiState::Failed {
                 self.wifi_state = WifiState::Idle;
             }
@@ -451,10 +466,10 @@ impl MetalsFetcher {
                     }
                 }
                 let fd = self.ctl_socket.unwrap();
-                if let Err(_) = set_passphrase(fd, WIFI_PASSPHRASE) {
+                if let Err(_) = set_passphrase(fd, config_str(blueos_kconfig::CONFIG_WLAN_PASSWORD)) {
                     println!("WIFI PSK ERR");
                 }
-                match trigger_connect(fd, WIFI_SSID) {
+                match trigger_connect(fd, config_str(blueos_kconfig::CONFIG_WLAN_SSID)) {
                     Ok(()) => {
                         println!("WIFI CONNECTING");
                         self.wifi_state = WifiState::Connecting { started_at: now };
@@ -483,46 +498,36 @@ impl MetalsFetcher {
         }
     }
 
-    /// One Tencent request updates both prices. Static-string logs only.
+    /// One Tencent request updates both prices and resyncs the wall clock
+    /// from the response `Date` header, so the demo needs a single request.
     fn fetch_prices(&mut self, ui: &MainWindow) {
-        match http_get(HTTP_HOST_IP, TX_PORT, TX_PATH, TX_HOST) {
-            Ok((200, body)) => {
-                println!("TX 200");
-                if let Some(gold) = extract_tencent_price(&body, "hf_GC") {
+        match http_get(HTTP_PROXY_IP, HTTP_PROXY_PORT, HTTP_PATH, HTTP_HOST) {
+            Ok((200, head, body)) => {
+                println!("TENCENT 200");
+                if let Some(ts) = parse_date_header(&head) {
+                    self.clock.sync(ts);
+                    if let Some(hm) = self.clock.now_hhmm() {
+                        ui.set_metals_time(hm.clone().into());
+                        self.last_minute = Some(hm);
+                    }
+                    println!("TIME OK");
+                }
+                if let Some(gold) = extract_tencent_price(&body, "hf_XAU") {
                     ui.set_metals_xau(gold.into());
                 }
-                if let Some(silver) = extract_tencent_price(&body, "hf_SI") {
+                if let Some(silver) = extract_tencent_price(&body, "hf_XAG") {
                     ui.set_metals_xag(silver.into());
                 }
                 ui.set_metals_status("".into());
             }
-            Ok((code, _)) => {
-                println!("TX !200");
+            Ok((code, _, _)) => {
+                println!("TENCENT !200");
                 ui.set_metals_status(format!("HTTP 状态 {}", code).into());
             }
             Err(err) => {
-                println!("TX ERR kind={:?} raw={:?}", err.kind(), err.raw_os_error());
+                println!("TENCENT ERR kind={:?} raw={:?}", err.kind(), err.raw_os_error());
                 ui.set_metals_status("价格获取失败".into());
             }
-        }
-    }
-
-    fn sync_time(&mut self) {
-        match http_get(HTTP_HOST_IP, TIME_PORT, TIME_PATH, TIME_HOST) {
-            Ok((200, body)) => {
-                if let Some(ts) = extract_timestamp(&body) {
-                    self.clock.sync(ts);
-                    println!("TIME OK");
-                } else {
-                    println!("TIME PARSE");
-                }
-            }
-            Ok((_, _)) => println!("TIME !200"),
-            Err(err) => println!(
-                "TIME ERR kind={:?} raw={:?}",
-                err.kind(),
-                err.raw_os_error()
-            ),
         }
     }
 
@@ -550,22 +555,21 @@ impl MetalsFetcher {
         }
 
         let first_due = now.saturating_sub(self.started_at) >= FIRST_FETCH_DELAY_MS;
-        let refresh_due = self.refresh_requested && first_due
+        // `refreshing` doubles as the fetch trigger and the UI "in progress"
+        // flag — set when the page is entered, the user taps refresh, or the
+        // periodic cadence elapses; cleared once fetch_prices returns.
+        let refresh_due = (self.refreshing && first_due)
             || (first_due && now.saturating_sub(self.last_refresh_ms) >= REFRESH_MS);
         if refresh_due {
-            self.refresh_requested = false;
             self.last_refresh_ms = now;
+            if !self.refreshing {
+                self.refreshing = true;
+                ui.set_metals_refreshing(true);
+            }
             println!("REFRESH");
             self.fetch_prices(ui);
-        }
-
-        // Sync immediately once Wi-Fi is up (last_resync_ms == 0 means
-        // "never synced"); then re-sync every TIME_RESYNC_MS.
-        let sync_due =
-            self.last_resync_ms == 0 || now.saturating_sub(self.last_resync_ms) >= TIME_RESYNC_MS;
-        if first_due && sync_due {
-            self.last_resync_ms = now;
-            self.sync_time();
+            self.refreshing = false;
+            ui.set_metals_refreshing(false);
         }
     }
 }
@@ -576,13 +580,19 @@ pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
     let fetcher = Rc::new(RefCell::new(MetalsFetcher::new()));
 
     let cb_fetcher = fetcher.clone();
+    let cb_ui = ui.as_weak();
     ui.on_metals_refresh(move || {
-        cb_fetcher.borrow_mut().request_refresh();
+        if let Some(ui) = cb_ui.upgrade() {
+            cb_fetcher.borrow_mut().request_refresh(&ui);
+        }
     });
 
     let active_fetcher = fetcher.clone();
+    let active_ui = ui.as_weak();
     ui.on_metals_active_changed(move |active| {
-        active_fetcher.borrow_mut().set_active(active);
+        if let Some(ui) = active_ui.upgrade() {
+            active_fetcher.borrow_mut().set_active(&ui, active);
+        }
     });
 
     let timer = slint::Timer::default();

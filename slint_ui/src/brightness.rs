@@ -15,7 +15,7 @@
 use crate::app_window::MainWindow;
 use librs::syscall::Syscall;
 use slint::ComponentHandle;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{Error, ErrorKind, Result as IoResult};
 use std::rc::Rc;
 
@@ -80,12 +80,16 @@ impl Drop for BacklightFd {
 
 struct BrightnessController {
     fd: BacklightFd,
+    last_set: Cell<Option<u8>>,
 }
 
 impl BrightnessController {
     fn new() -> IoResult<Self> {
         let fd = BacklightFd::open()?;
-        Ok(Self { fd })
+        Ok(Self {
+            fd,
+            last_set: Cell::new(None),
+        })
     }
 
     const MIN_PCT: u8 = 30;
@@ -93,10 +97,16 @@ impl BrightnessController {
     fn set(&self, value: u8) {
         // value is 30-100, round to nearest 0-255 step so the value round-trips
         let pct = value.max(Self::MIN_PCT);
+        if self.last_set.get() == Some(pct) {
+            return;
+        }
         let hw_value = ((pct as u16 * 255 + 50) / 100) as u8;
         println!("[BACKLIGHT] set {} ({}%)", hw_value, pct);
         if let Err(error) = self.fd.write_brightness(hw_value) {
             println!("[BACKLIGHT] set failed: {error}");
+            self.last_set.set(None);
+        } else {
+            self.last_set.set(Some(pct));
         }
     }
 

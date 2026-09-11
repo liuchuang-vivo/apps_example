@@ -14,6 +14,7 @@ import { WifiScanPage, WifiNetwork } from "./pages/wifi-scan-page.slint";
 import { ImuPage } from "./pages/imu-page.slint";
 import { FileIoPage } from "./pages/file-io-page.slint";
 import { MetalsPage } from "./pages/metals-page.slint";
+import { TouchPage } from "./pages/touch-page.slint";
 import "../../slint_sdcard/assets/website-text.ttf";
 import "../resources/blueos-icons.ttf";
 import { WebsiteGlyphs } from "../../slint_sdcard/assets/website-glyphs.slint";
@@ -60,6 +61,7 @@ export component MainWindow inherits Window {
     in-out property <string> metals-xau: "--";
     in-out property <string> metals-xag: "--";
     in-out property <string> metals-status: "…";
+    in-out property <bool> metals-refreshing: false;
     callback metals-refresh();
     callback metals-active-changed(bool);
 
@@ -70,6 +72,9 @@ export component MainWindow inherits Window {
     // SchedMon page properties
     in property <int> cpu-cores: 1;
     in property <[float]> cpu-usage-percent;
+    in property <string> cpu-model: "esp32c6";
+    in property <string> cpu-isa: "rv32imac";
+    in property <string> cpu-mhz-text: "160 MHz";
     in property <float> mem-total-kb: 0.0;
     in property <float> mem-used-kb: 0.0;
     in property <float> mem-max-used-kb: 0.0;
@@ -79,7 +84,10 @@ export component MainWindow inherits Window {
     in property <[string]> task-prios;
     in property <[string]> task-names;
     in property <int> task-hidden: 0;
+    in property <int> task-total: 0;
     callback refresh-tasks();
+    callback task-scroll-up();
+    callback task-scroll-down();
 
     in-out property <string> accel-x: "---";
     in-out property <string> accel-y: "---";
@@ -144,6 +152,9 @@ export component MainWindow inherits Window {
     if current-app == 6: SchedMonPage {
         cpu-cores <=> root.cpu-cores;
         cpu-usage-percent <=> root.cpu-usage-percent;
+        cpu-model <=> root.cpu-model;
+        cpu-isa <=> root.cpu-isa;
+        cpu-mhz-text <=> root.cpu-mhz-text;
         mem-total-kb <=> root.mem-total-kb;
         mem-used-kb <=> root.mem-used-kb;
         mem-max-used-kb <=> root.mem-max-used-kb;
@@ -153,7 +164,10 @@ export component MainWindow inherits Window {
         task-prios <=> root.task-prios;
         task-names <=> root.task-names;
         task-hidden <=> root.task-hidden;
+        task-total <=> root.task-total;
         refresh-tasks => { root.refresh-tasks(); }
+        swipe-up(dx, dy) => { root.task-scroll-up(); }
+        swipe-down(dx, dy) => { root.task-scroll-down(); }
         swipe-right(dx, dy) => { root.current-app = -1; }
         go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
@@ -288,9 +302,11 @@ export component MainWindow inherits Window {
         xau: root.metals-xau;
         xag: root.metals-xag;
         net-status: root.metals-status;
+        refreshing <=> root.metals-refreshing;
         refresh => { root.metals-refresh(); }
         swipe-right(dx, dy) => { root.current-app = -1; }
         go-back => { root.current-app = -1; } go-home => { root.current-app = -1; }
     }
     if current-app == 15: DemoPage { title: "音频";      accent: #cf8ff2; swipe-right(dx, dy) => { root.current-app = -1; } go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
+    if current-app == 16: TouchPage { go-back => { root.current-app = -1; } go-home => { root.current-app = -1; } }
 }

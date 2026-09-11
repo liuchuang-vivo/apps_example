@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 const POLL_MS: u64 = 500; // 2 Hz refresh rate
 const CORE_COUNT: usize = 1; // ESP32-C6 is single-core RISC-V
-const MAX_TASK_LINES: usize = 4;
+const MAX_TASK_LINES: usize = 8;
 
 /// Snapshot of CPU idle/system ticks for computing delta usage.
 #[derive(Clone, Copy, Default)]
@@ -112,9 +112,43 @@ fn parse_kb_value(line: &str) -> f32 {
     }
 }
 
+/// Parse /proc/cpuinfo. Returns (uarch, isa, mhz_text) or defaults on failure.
+fn parse_cpuinfo(content: &[u8]) -> (String, String, String) {
+    let text = core::str::from_utf8(content).unwrap_or("");
+    let mut uarch = String::from("esp32c6");
+    let mut isa = String::from("rv32imac");
+    let mut mhz: u32 = 160;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("uarch") {
+            if let Some(v) = rest.trim_start().strip_prefix(':') {
+                let v = v.trim();
+                if !v.is_empty() {
+                    uarch = String::from(v);
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("isa") {
+            if let Some(v) = rest.trim_start().strip_prefix(':') {
+                let v = v.trim();
+                if !v.is_empty() {
+                    isa = String::from(v);
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("cpu MHz") {
+            if let Some(v) = rest.trim_start().strip_prefix(':') {
+                if let Ok(f) = v.trim().parse::<f32>() {
+                    mhz = f as u32;
+                }
+            }
+        }
+    }
+    (uarch, isa, format!("{} MHz", mhz))
+}
+
 /// Parse a thread status file from /proc/<tid>/status.
 fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, String, String) {
     let text = core::str::from_utf8(content).unwrap_or("");
+    let mut name = "";
     let mut kind = "normal";
     let mut state = "unknown";
     let mut priority = 0usize;
@@ -122,6 +156,8 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
     for line in text.lines() {
         let line = line.trim();
         if let Some(val) = line.strip_prefix("Name:") {
+            name = val.trim();
+        } else if let Some(val) = line.strip_prefix("Kind:") {
             kind = val.trim();
         } else if let Some(val) = line.strip_prefix("State:") {
             state = val.trim();
@@ -130,34 +166,27 @@ fn parse_thread_status(content: &[u8], tid: usize) -> (String, String, String, S
         }
     }
 
-    // State abbreviations for compact display
+    // State full names for display.
     let state_abbr = match state {
-        "running" => "RUN",
-        "ready" => "RDY",
-        "suspended" => "SUS",
+        "running" => "RUNNING",
+        "ready" => "READY",
+        "suspended" => "SUSPENDED",
         "idle" => "IDLE",
-        "retired" => "FIN",
+        "retired" => "RETIRED",
         _ => "?",
     };
 
-    // Known fallback names identify system thread kinds. Any other value is a
-    // custom name on a normal thread.
+    // Type column derives from the thread kind (four categories).
     let type_abbr = match kind {
         "idle" => "idle",
         "normal" => "norm",
         "async_poller" => "poll",
         "soft_timer" => "timer",
-        _ => kind,
+        _ => "norm",
     };
 
-    // Expand fallback kind names, but preserve custom names verbatim.
-    let typed_name = match kind {
-        "idle" => "Idle Task",
-        "normal" => "Normal",
-        "async_poller" => "Async Poller",
-        "soft_timer" => "Soft Timer",
-        _ => kind,
-    };
+    // Name column shows the custom name verbatim (empty falls back to kind).
+    let typed_name = if name.is_empty() { kind } else { name };
 
     // TID: show last 4 hex digits
     let tid_str = format!("{:04X}", tid & 0xFFFF);
@@ -307,6 +336,9 @@ struct TaskEntry {
 struct SchedMonitor {
     prev_ticks: Vec<CpuTickSnapshot>,
     first_stat: bool,
+    first_cpuinfo: bool,
+    scroll_offset: usize,
+    total_tasks: usize,
 }
 
 impl SchedMonitor {
@@ -314,6 +346,27 @@ impl SchedMonitor {
         Self {
             prev_ticks: vec![CpuTickSnapshot::default(); CORE_COUNT],
             first_stat: true,
+            first_cpuinfo: true,
+            scroll_offset: 0,
+            total_tasks: 0,
+        }
+    }
+
+    /// Max valid scroll offset so the last window still fills all rows when
+    /// there are enough tasks; when fewer than MAX_TASK_LINES, offset is 0.
+    fn max_offset(&self) -> usize {
+        self.total_tasks.saturating_sub(MAX_TASK_LINES)
+    }
+
+    fn scroll_down(&mut self) {
+        // swipe-down → look at tasks above (offset toward 0)
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    }
+
+    fn scroll_up(&mut self) {
+        // swipe-up → look at tasks below (offset toward max)
+        if self.scroll_offset < self.max_offset() {
+            self.scroll_offset += 1;
         }
     }
 
@@ -385,7 +438,7 @@ impl SchedMonitor {
         let mut prio_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
         let mut name_col: Vec<slint::SharedString> = Vec::with_capacity(MAX_TASK_LINES);
 
-        for entry in entries.iter().take(MAX_TASK_LINES) {
+        for entry in entries.iter().skip(self.scroll_offset).take(MAX_TASK_LINES) {
             tid_col.push(entry.tid_disp.clone().into());
             type_col.push(entry.type_abbr.clone().into());
             state_col.push(entry.state_abbr.clone().into());
@@ -410,7 +463,12 @@ impl SchedMonitor {
         update_task_model(&ui.get_task_states(), &state_col);
         update_task_model(&ui.get_task_prios(), &prio_col);
         update_task_model(&ui.get_task_names(), &name_col);
-        ui.set_task_hidden(tids.len().saturating_sub(MAX_TASK_LINES) as i32);
+        ui.set_task_hidden(
+            tids.len()
+                .saturating_sub(self.scroll_offset + MAX_TASK_LINES) as i32,
+        );
+        ui.set_task_total(tids.len() as i32);
+        self.total_tasks = tids.len();
     }
 
     fn tick(&mut self, ui: &MainWindow) {
@@ -475,6 +533,22 @@ impl SchedMonitor {
                 ui.set_mem_max_used_kb(max_used);
             }
         }
+
+        // ---- CPU info ----
+        // Model and ISA are static; the clock frequency comes from the current
+        // hardware clock-tree configuration and may change at runtime.
+        if let Ok(c) = read_proc_file(b"/proc/cpuinfo\0") {
+            let (uarch, isa, mhz_text) = parse_cpuinfo(&c);
+            if self.first_cpuinfo {
+                ui.set_cpu_model(uarch.into());
+                ui.set_cpu_isa(isa.into());
+                self.first_cpuinfo = false;
+            }
+            let cur: slint::SharedString = ui.get_cpu_mhz_text();
+            if cur.as_str() != mhz_text {
+                ui.set_cpu_mhz_text(mhz_text.into());
+            }
+        }
     }
 }
 
@@ -527,6 +601,22 @@ pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
                 let mut mon = monitor.borrow_mut();
                 mon.refresh_task_list(&ui);
             }
+        });
+    }
+
+    // Task list scroll: swipe-up/down adjust the window offset; the next tick
+    // (≤POLL_MS) re-slices the visible rows. No immediate refresh — matches
+    // the 2 Hz cadence and avoids a /proc read per swipe.
+    {
+        let monitor = monitor.clone();
+        ui.on_task_scroll_up(move || {
+            monitor.borrow_mut().scroll_up();
+        });
+    }
+    {
+        let monitor = monitor.clone();
+        ui.on_task_scroll_down(move || {
+            monitor.borrow_mut().scroll_down();
         });
     }
 
