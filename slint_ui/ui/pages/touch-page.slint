@@ -55,11 +55,11 @@ export component TouchPage inherits AppPage {
     }
 
     Text {
-        x: 34px; y: 8px; width: 300px; height: 18px;
+        x: 34px; y: 5px; width: 300px; height: 30px;
         text: root.tracking
             ? "X " + (root.current-x / 1px) + "   Y " + (root.current-y / 1px)
             : "—";
-        color: Theme.muted-text; font-size: Theme.font-sm; font-weight: 700;
+        color: Theme.muted-text; font-size: Theme.font-base; font-weight: 700;
         vertical-alignment: center;
     }
 }
