@@ -222,11 +222,9 @@ impl TouchFile {
                 if self.pressed {
                     self.release_debounce = 0;
                     if position.x != self.last_x || position.y != self.last_y {
-                        println!("[TOUCH] move ({}, {})", position.x as i32, position.y as i32);
                         window.dispatch_event(WindowEvent::PointerMoved { position });
                     }
                 } else {
-                    println!("[TOUCH] press ({}, {}) t={}", position.x as i32, position.y as i32, uptime_millis());
                     TOUCH_PRESSED.store(true, std::sync::atomic::Ordering::Relaxed);
                     window.dispatch_event(WindowEvent::PointerPressed {
                         position,
@@ -241,10 +239,7 @@ impl TouchFile {
             }
             None if self.pressed => {
                 self.release_debounce += 1;
-                println!("[TOUCH] tc=0 debounce={}", self.release_debounce);
                 if self.release_debounce >= RELEASE_DEBOUNCE_THRESHOLD {
-                    let dt = uptime_millis().saturating_sub(self.press_time);
-                    println!("[TOUCH] release at ({}, {}) t={} dt={}ms", self.last_x as i32, self.last_y as i32, uptime_millis(), dt);
                     TOUCH_PRESSED.store(false, std::sync::atomic::Ordering::Relaxed);
                     window.dispatch_event(WindowEvent::PointerReleased {
                         position: slint::LogicalPosition::new(self.last_x, self.last_y),
