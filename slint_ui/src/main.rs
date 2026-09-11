@@ -33,6 +33,7 @@ mod png_view;
 mod sdcard;
 mod wifi;
 mod imu;
+mod audio;
 
 use crate::app_window::MainWindow;
 use crate::background::PanelRgb565Pixel;
@@ -787,6 +788,7 @@ fn run_slint_ui() -> IoResult<()> {
     let _flash_io_timer = flash_io::install(&ui);
     let _metals_timer = metals::install(&ui);
     brightness::install(&ui);
+    let _audio_timer = audio::install(&ui);
 
     ui.on_debug(|msg| {
         println!("[DEBUG] {}", msg);

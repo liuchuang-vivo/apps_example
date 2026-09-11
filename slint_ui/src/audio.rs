@@ -1,0 +1,381 @@
+// Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Audio playback page — integrates liuchang's ES8311 audio playback into the Slint UI.
+//!
+//! Exposes an `install()` function that attaches callbacks for the audio-page.slint
+//! component: play/pause, and status display.
+//!
+//! Playback runs in the Slint event loop via a 10ms timer, writing chunks to
+//! `/dev/i2s0`. This avoids threading issues since `MainWindow` is !Send.
+
+use crate::app_window::MainWindow;
+use librs::syscall::Syscall;
+use slint::ComponentHandle;
+use std::cell::{Cell, RefCell};
+use std::io::{Error, ErrorKind, Result as IoResult, Write};
+use std::rc::Rc;
+
+/// Shortened PCM audio (3 seconds, 96 KB) — the full 1 MB mood_pcm does not
+/// fit in the slint_ui_example ROM region alongside the Slint renderer.
+include!("audio_pcm_short.rs");
+
+/// 16kHz, 16-bit, mono → stereo, 32-bit left-justified slots.
+const LJ_CHUNK: usize = 4088; // 511 frames × 8 bytes
+const RAW_CHUNK: usize = LJ_CHUNK / 4; // 511 samples × 2 bytes = 1022
+const DIAGNOSTIC_TONE: bool = true;
+const DIAGNOSTIC_TONE_HZ: usize = 1_000;
+const SAMPLE_RATE_HZ: usize = 16_000;
+const DIAGNOSTIC_AMPLITUDE: i16 = 24_000;
+
+struct AudioPlayer {
+    offset: usize,
+    buf: Vec<u8>,
+    file: Option<std::fs::File>,
+}
+
+thread_local! {
+    static PLAYER: Rc<RefCell<AudioPlayer>> = Rc::new(RefCell::new(AudioPlayer {
+        offset: 0,
+        buf: vec![0u8; LJ_CHUNK],
+        file: None,
+    }));
+}
+
+/// Convert mono PCM (2 bytes/sample) to I2S left-justified stereo frames.
+fn convert_to_lj(pcm_src: &[u8], lj_dst: &mut [u8], raw_len: usize, sample_offset: usize) {
+    let samples = raw_len / 2;
+    for s in 0..samples {
+        let src = s * 2;
+        let dst = s * 8;
+        let sample = if DIAGNOSTIC_TONE {
+            let half_period = SAMPLE_RATE_HZ / DIAGNOSTIC_TONE_HZ / 2;
+            if ((sample_offset + s) / half_period) & 1 == 0 {
+                DIAGNOSTIC_AMPLITUDE
+            } else {
+                -DIAGNOSTIC_AMPLITUDE
+            }
+            .to_le_bytes()
+        } else {
+            [pcm_src[src], pcm_src[src + 1]]
+        };
+        lj_dst[dst] = 0x00;
+        lj_dst[dst + 1] = 0x00;
+        lj_dst[dst + 2] = sample[0];
+        lj_dst[dst + 3] = sample[1];
+        lj_dst[dst + 4] = 0x00;
+        lj_dst[dst + 5] = 0x00;
+        lj_dst[dst + 6] = sample[0];
+        lj_dst[dst + 7] = sample[1];
+    }
+}
+
+/// Timer callback — writes one chunk of PCM data to /dev/i2s0.
+fn playback_tick(ui: &MainWindow) {
+    PLAYER.with(|player_rc| {
+        let mut player = player_rc.borrow_mut();
+        let pcm = MOOD_PCM.as_slice();
+
+        // Lazily open /dev/i2s0 on first tick.
+        if player.file.is_none() {
+            match std::fs::OpenOptions::new().write(true).open("/dev/i2s0") {
+                Ok(f) => {
+                    println!("[AUDIO] /dev/i2s0 opened, starting playback");
+                    player.file = Some(f);
+                }
+                Err(e) => {
+                    println!("[AUDIO] Cannot open /dev/i2s0: {}", e);
+                    ui.set_audio_status(format!("打开 I2S 失败: {}", e).into());
+                    return;
+                }
+            }
+        }
+
+        let raw_len = RAW_CHUNK.min(pcm.len() - player.offset) & !1;
+        if raw_len == 0 {
+            // Playback complete
+            println!("[AUDIO] Playback complete ({} bytes)", player.offset);
+            ui.set_audio_status("播放完成".into());
+            ui.set_audio_playing(false);
+            if let Some(ref mut f) = player.file {
+                let _ = f.flush();
+            }
+            return;
+        }
+
+        let lj_len = (raw_len / 2) * 8;
+        let chunk_index = player.offset / RAW_CHUNK;
+        if chunk_index < 3 || chunk_index % 16 == 0 {
+            println!(
+                "[AUDIO] chunk={} pcm_offset={} raw_len={} i2s_len={}",
+                chunk_index, player.offset, raw_len, lj_len
+            );
+        }
+        // Copy PCM slice first to avoid borrowing player.buf while pcm borrows player.
+        let pcm_chunk: Vec<u8> = pcm[player.offset..player.offset + raw_len].to_vec();
+        let sample_offset = player.offset / 2;
+        convert_to_lj(&pcm_chunk, &mut player.buf, raw_len, sample_offset);
+
+        // Split borrows: take file out, write, then put back.
+        let mut file_opt = player.file.take();
+        let write_result = match file_opt.as_mut() {
+            Some(f) => f.write_all(&player.buf[..lj_len]),
+            None => return,
+        };
+        player.file = file_opt;
+
+        match write_result {
+            Ok(()) => {
+                player.offset += raw_len;
+                // Update status periodically
+                if player.offset % (16 * RAW_CHUNK) < RAW_CHUNK {
+                    let pct = player.offset * 100 / pcm.len();
+                    ui.set_audio_status(format!("播放中… {}%", pct).into());
+                }
+            }
+            Err(e) => {
+                println!(
+                    "[AUDIO] Write error: chunk={} pcm_offset={} raw_len={} i2s_len={} error={}",
+                    chunk_index, player.offset, raw_len, lj_len, e
+                );
+                ui.set_audio_status(format!("播放错误: {}", e).into());
+                ui.set_audio_playing(false);
+            }
+        }
+    });
+}
+
+const AUDIO_VOLUME_DEVICE: &[u8] = b"/dev/audio_volume\0";
+
+struct AudioVolumeFd(libc::c_int);
+
+impl AudioVolumeFd {
+    fn open() -> IoResult<Self> {
+        let path = librs::c_str::CStr::from_bytes_with_nul(AUDIO_VOLUME_DEVICE)
+            .map_err(|_| Error::from_raw_os_error(libc::EINVAL))?;
+        let fd = librs::syscall::sys::Sys::open(path, libc::O_RDWR, 0);
+        if fd < 0 {
+            Err(syscall_error(fd))
+        } else {
+            Ok(Self(fd))
+        }
+    }
+
+    fn read_volume(&self) -> IoResult<u8> {
+        let mut buf = [0u8; 8];
+        let len = match librs::syscall::sys::Sys::read(self.0, &mut buf) {
+            Ok(n) => n,
+            Err(librs::errno::Errno(errno)) => return Err(Error::from_raw_os_error(errno)),
+        };
+        if len == 0 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "audio_volume read empty",
+            ));
+        }
+        let text = core::str::from_utf8(&buf[..len])
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "audio_volume read non-utf8"))?;
+        let value: u8 = text
+            .trim()
+            .parse()
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "audio_volume read non-numeric"))?;
+        Ok(value)
+    }
+
+    fn write_volume(&self, value: u8) -> IoResult<()> {
+        let text = format!("{}\n", value);
+        let mut bytes = text.as_bytes();
+        while !bytes.is_empty() {
+            match librs::syscall::sys::Sys::write(self.0, bytes) {
+                Ok(0) => {
+                    return Err(Error::new(
+                        ErrorKind::WriteZero,
+                        "failed to write audio_volume",
+                    ))
+                }
+                Ok(n) => bytes = &bytes[n..],
+                Err(librs::errno::Errno(errno)) => return Err(Error::from_raw_os_error(errno)),
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for AudioVolumeFd {
+    fn drop(&mut self) {
+        let _ = librs::syscall::sys::Sys::close(self.0);
+    }
+}
+
+fn syscall_error(ret: libc::c_int) -> Error {
+    if ret == -1 {
+        Error::last_os_error()
+    } else {
+        Error::from_raw_os_error(-ret)
+    }
+}
+
+struct AudioVolumeController {
+    fd: Option<AudioVolumeFd>,
+    last_set: Cell<Option<u8>>,
+}
+
+impl AudioVolumeController {
+    fn new() -> IoResult<Self> {
+        let fd = AudioVolumeFd::open()?;
+        Ok(Self {
+            fd: Some(fd),
+            last_set: Cell::new(None),
+        })
+    }
+
+    /// Construct a controller with no device — `set`/`get` become no-ops.
+    fn disabled() -> Self {
+        Self {
+            fd: None,
+            last_set: Cell::new(None),
+        }
+    }
+
+    /// Set the volume from a 0-100 percentage value.
+    fn set(&self, pct: u8) {
+        let pct = pct.min(100);
+        if self.last_set.get() == Some(pct) {
+            return;
+        }
+        // Map 0-100% to the codec's 0-255 range. The +50 rounds to nearest.
+        let hw_value = ((pct as u16 * 255 + 50) / 100) as u8;
+        println!("[AUDIO_VOL] set {} ({}%)", hw_value, pct);
+        let Some(fd) = self.fd.as_ref() else {
+            return;
+        };
+        if let Err(error) = fd.write_volume(hw_value) {
+            println!("[AUDIO_VOL] set failed: {error}");
+            self.last_set.set(None);
+        } else {
+            self.last_set.set(Some(pct));
+        }
+    }
+
+    /// Read the current volume, returned as a 0-100 percentage.
+    fn get(&self) -> u8 {
+        let Some(fd) = self.fd.as_ref() else {
+            return 100;
+        };
+        match fd.read_volume() {
+            Ok(hw_value) => {
+                let pct = ((hw_value as u16 * 100 + 127) / 255) as u8;
+                println!("[AUDIO_VOL] read {} ({}%)", hw_value, pct);
+                pct
+            }
+            Err(error) => {
+                println!("[AUDIO_VOL] read failed: {error}");
+                100
+            }
+        }
+    }
+}
+
+pub(crate) fn install(ui: &MainWindow) -> slint::Timer {
+    let ui_weak = ui.as_weak();
+    let ui_weak2 = ui.as_weak();
+
+    // Wire up the volume controller. Failure to open the device is non-fatal:
+    // playback still works at the codec's init volume, only runtime control is
+    // unavailable.
+    let volume_controller = match AudioVolumeController::new() {
+        Ok(c) => Rc::new(RefCell::new(c)),
+        Err(error) => {
+            println!("[AUDIO_VOL] failed to open audio_volume device: {error}");
+            // Use a sentinel empty controller so callbacks stay simple.
+            Rc::new(RefCell::new(AudioVolumeController::disabled()))
+        }
+    };
+
+    let vol_ui_weak = ui.as_weak();
+    let vol_controller = volume_controller.clone();
+    ui.on_set_audio_volume(move |value| {
+        if let Some(_ui) = vol_ui_weak.upgrade() {
+            vol_controller.borrow().set(value as u8);
+        }
+    });
+
+    let vol_active_weak = ui.as_weak();
+    let active_controller = volume_controller.clone();
+    ui.on_audio_page_active_changed(move |active| {
+        if active {
+            if let Some(ui) = vol_active_weak.upgrade() {
+                let value = active_controller.borrow().get();
+                ui.set_audio_volume(value as i32);
+            }
+        }
+    });
+
+    ui.on_audio_play(move || {
+        let ui = match ui_weak.upgrade() {
+            Some(ui) => ui,
+            None => return,
+        };
+
+        if ui.get_audio_playing() {
+            println!("[AUDIO] Already playing, ignoring play request");
+            return;
+        }
+
+        // Reset player state
+        PLAYER.with(|p| {
+            let mut player = p.borrow_mut();
+            player.offset = 0;
+            player.file = None;
+        });
+
+        ui.set_audio_playing(true);
+        if DIAGNOSTIC_TONE {
+            println!("[AUDIO] Play started: 1 kHz diagnostic square wave");
+        } else {
+            println!("[AUDIO] Play started: PCM music");
+        }
+    });
+
+    ui.on_audio_stop(move || {
+        let ui = match ui_weak2.upgrade() {
+            Some(ui) => ui,
+            None => return,
+        };
+
+        ui.set_audio_playing(false);
+        ui.set_audio_status("已停止".into());
+        println!("[AUDIO] Stopped");
+    });
+
+    // Install a 10ms timer that drives playback chunks while playing.
+    let timer_ui = ui.as_weak();
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(10),
+        move || {
+            let ui = match timer_ui.upgrade() {
+                Some(ui) => ui,
+                None => return,
+            };
+
+            if ui.get_audio_playing() {
+                playback_tick(&ui);
+            }
+        },
+    );
+
+    timer
+}

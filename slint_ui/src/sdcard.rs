@@ -21,7 +21,7 @@ use std::io::{Error, ErrorKind, Read, Result as IoResult, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-#[path = "../../slint_sdcard/src/text_pages.rs"]
+#[path = "text_pages.rs"]
 mod text_pages;
 
 const SD_ROOT: &str = "/data";

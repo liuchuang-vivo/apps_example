@@ -45,8 +45,8 @@ action("generate_slint_ui") {
     "ui/pages/file-io-page.slint",
     "ui/pages/metals-page.slint",
     "ui/pages/audio-page.slint",
-    "assets/website-text.ttf",
-    "assets/website-glyphs.slint",
+    "resources/website-text.ttf",
+    "resources/website-glyphs.slint",
     "resources/blueos-icons.ttf",
   ]
   outputs = [ _slint_ui_generated ]
