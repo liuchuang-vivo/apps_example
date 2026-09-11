@@ -22,7 +22,7 @@ use std::rc::Rc;
 
 const SCAN_POLL_ATTEMPTS: usize = 25;
 const SCAN_POLL_INTERVAL_MS: u128 = 200;
-const AUTO_SCAN_INTERVAL_MS: u128 = 15_000;
+const INITIAL_SCAN_DELAY_MS: u128 = 400;
 const SCAN_BUFFER_SIZE: usize = 2048;
 const MAX_VISIBLE_NETWORKS: usize = 6;
 
@@ -55,8 +55,9 @@ struct WifiScanner {
     scan_buffer: Vec<u8>,
     state: WifiScanState,
     scan_requested: bool,
+    scan_not_before: u128,
+    scan_started_at: Option<u128>,
     page_active: bool,
-    next_auto_scan_at: u128,
     results: Vec<WifiNetworkInfo>,
     scroll_offset: usize,
     total_count: usize,
@@ -321,8 +322,9 @@ impl WifiScanner {
             scan_buffer: vec![0u8; SCAN_BUFFER_SIZE],
             state: WifiScanState::Idle,
             scan_requested: false,
+            scan_not_before: 0,
+            scan_started_at: None,
             page_active: false,
-            next_auto_scan_at: 0,
             results: Vec::new(),
             scroll_offset: 0,
             total_count: 0,
@@ -367,9 +369,7 @@ impl WifiScanner {
         if self.results.is_empty() {
             return;
         }
-        let new_offset = self
-            .scroll_offset
-            .saturating_sub(MAX_VISIBLE_NETWORKS);
+        let new_offset = self.scroll_offset.saturating_sub(MAX_VISIBLE_NETWORKS);
         if new_offset != self.scroll_offset {
             self.scroll_offset = new_offset;
             self.show_page(ui);
@@ -380,10 +380,16 @@ impl WifiScanner {
         self.page_active = active;
         if active {
             self.scroll_offset = 0;
-            self.request_scan(ui);
+            if !matches!(self.state, WifiScanState::Waiting { .. }) && !self.scan_requested {
+                self.scan_requested = true;
+                self.scan_not_before = uptime_millis().saturating_add(INITIAL_SCAN_DELAY_MS);
+                ui.set_scanning(true);
+                ui.set_status_text("正在准备无线扫描".into());
+            }
+        } else if matches!(self.state, WifiScanState::Idle) {
+            self.scan_requested = false;
+            ui.set_scanning(false);
         }
-        // When the Wi-Fi page is left, scanning stops until the user
-        // re-opens it.
     }
 
     fn request_scan(&mut self, ui: &MainWindow) {
@@ -392,13 +398,19 @@ impl WifiScanner {
         }
 
         self.scan_requested = true;
+        self.scan_not_before = uptime_millis();
         ui.set_scanning(true);
         ui.set_status_text("请求扫描".into());
     }
 
     fn finish_scan(&mut self, ui: &MainWindow, result: IoResult<WifiScanResults>) {
         self.state = WifiScanState::Idle;
-        self.next_auto_scan_at = uptime_millis().saturating_add(AUTO_SCAN_INTERVAL_MS);
+        if let Some(started_at) = self.scan_started_at.take() {
+            println!(
+                "[WIFI_SCAN] completed elapsed_ms={}",
+                uptime_millis().saturating_sub(started_at)
+            );
+        }
         match result {
             Ok(results) => {
                 self.results = results.networks;
@@ -408,9 +420,7 @@ impl WifiScanner {
                 if results.total_count == 0 {
                     ui.set_status_text("扫描完成，未发现接入点".into());
                 } else {
-                    ui.set_status_text(
-                        format!("发现 {} 个附近网络", results.total_count).into(),
-                    );
+                    ui.set_status_text(format!("发现 {} 个附近网络", results.total_count).into());
                 }
             }
             Err(error) => {
@@ -426,9 +436,11 @@ impl WifiScanner {
 
     fn start_scan(&mut self, ui: &MainWindow, now: u128) {
         self.scan_requested = false;
+        self.scan_started_at = Some(now);
         self.scroll_offset = 0;
         ui.set_scanning(true);
         ui.set_status_text("扫描信道 1 至 13".into());
+        println!("[WIFI_SCAN] started");
 
         if self.socket.is_none() {
             match SocketFd::open_for_wifi_scan() {
@@ -455,10 +467,7 @@ impl WifiScanner {
         let now = uptime_millis();
         match self.state {
             WifiScanState::Idle => {
-                if !self.page_active {
-                    return;
-                }
-                if !self.scan_requested && now < self.next_auto_scan_at {
+                if !self.page_active || !self.scan_requested || now < self.scan_not_before {
                     return;
                 }
                 self.start_scan(ui, now);

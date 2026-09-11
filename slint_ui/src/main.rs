@@ -22,18 +22,18 @@ extern crate rsrt;
 mod app_window {
     include!(env!("SLINT_UI_GENERATED"));
 }
+mod audio;
 mod background;
 mod battery;
 mod brightness;
 mod flash_io;
+mod imu;
 mod math;
 mod metals;
-mod sched_mon;
 mod png_view;
+mod sched_mon;
 mod sdcard;
 mod wifi;
-mod imu;
-mod audio;
 
 use crate::app_window::MainWindow;
 use crate::background::PanelRgb565Pixel;
@@ -144,8 +144,11 @@ impl TouchReport {
 struct TouchFile {
     fd: libc::c_int,
     pressed: bool,
+    press_x: f32,
+    press_y: f32,
     last_x: f32,
     last_y: f32,
+    full_refresh_gesture: bool,
     /// Consecutive tc=0 reports before releasing a pressed touch.
     /// CST9220 firmware can briefly report no touch mid-swipe, so a small
     /// debounce prevents spurious release events.
@@ -155,6 +158,7 @@ struct TouchFile {
 }
 
 const RELEASE_DEBOUNCE_THRESHOLD: u8 = 8;
+const FULL_REFRESH_MOVE_THRESHOLD: f32 = 10.0;
 
 // Set while a touch is pressed. Read by the IMU poller to suspend sensor
 // reads during gestures — a redraw triggered by new values takes ~500ms
@@ -186,8 +190,11 @@ impl TouchFile {
         Ok(Self {
             fd,
             pressed: false,
+            press_x: 0.0,
+            press_y: 0.0,
             last_x: 0.0,
             last_y: 0.0,
+            full_refresh_gesture: false,
             release_debounce: 0,
             press_time: 0,
         })
@@ -231,7 +238,15 @@ impl TouchFile {
                     self.release_debounce = 0;
                     if position.x != self.last_x || position.y != self.last_y {
                         window.dispatch_event(WindowEvent::PointerMoved { position });
-                        TOUCH_MOVED.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if !self.full_refresh_gesture {
+                            let dx = position.x - self.press_x;
+                            let dy = position.y - self.press_y;
+                            self.full_refresh_gesture = dx * dx + dy * dy
+                                >= FULL_REFRESH_MOVE_THRESHOLD * FULL_REFRESH_MOVE_THRESHOLD;
+                        }
+                        if self.full_refresh_gesture {
+                            TOUCH_MOVED.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                 } else {
                     TOUCH_PRESSED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -240,6 +255,9 @@ impl TouchFile {
                         button: PointerEventButton::Left,
                     });
                     self.pressed = true;
+                    self.press_x = position.x;
+                    self.press_y = position.y;
+                    self.full_refresh_gesture = false;
                     self.release_debounce = 0;
                     self.press_time = uptime_millis();
                 }
@@ -255,6 +273,7 @@ impl TouchFile {
                         button: PointerEventButton::Left,
                     });
                     self.pressed = false;
+                    self.full_refresh_gesture = false;
                     self.release_debounce = 0;
                 }
             }
@@ -361,10 +380,62 @@ impl FbFile {
 
         write_all(self.fd, pixels)
     }
+
+    fn draw_area(
+        &mut self,
+        pixels: &[u8],
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        stride: usize,
+    ) -> IoResult<usize> {
+        let row_bytes = width
+            .checked_mul(self.pixel_format.bytes_per_pixel() as usize)
+            .ok_or_else(|| Error::from_raw_os_error(libc::EINVAL))?;
+        let source_len = height
+            .checked_sub(1)
+            .and_then(|rows| rows.checked_mul(stride))
+            .and_then(|prefix| prefix.checked_add(row_bytes))
+            .ok_or_else(|| Error::from_raw_os_error(libc::EINVAL))?;
+        if width == 0 || height == 0 || stride < row_bytes || pixels.len() < source_len {
+            return Err(Error::from_raw_os_error(libc::EINVAL));
+        }
+
+        let mut request = libc::fb_draw_area {
+            x: u32::try_from(x).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?,
+            y: u32::try_from(y).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?,
+            width: u32::try_from(width).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?,
+            height: u32::try_from(height).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?,
+            stride: u32::try_from(stride).map_err(|_| Error::from_raw_os_error(libc::EINVAL))?,
+            pixels: pixels.as_ptr().cast::<libc::c_void>(),
+        };
+
+        match unsafe {
+            ioctl(
+                self.fd,
+                libc::FBIO_DRAW_AREA,
+                (&mut request as *mut libc::fb_draw_area).cast::<libc::c_void>(),
+            )
+        } {
+            Ok(()) => Ok(1),
+            Err(error)
+                if error.raw_os_error() == Some(libc::ENOSYS)
+                    || error.raw_os_error() == Some(libc::ENOTTY) =>
+            {
+                for row in 0..height {
+                    let offset = row * stride;
+                    self.draw_line(&pixels[offset..offset + row_bytes], x, y + row)?;
+                }
+                Ok(height)
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
-/// Renders into one reusable scanline and batches complete rows without allocating
-/// a full-frame pixel buffer.
+/// Renders into one reusable scanline and batches consecutive equal-width rows
+/// without allocating a full-frame pixel buffer.
 ///
 /// This keeps the software renderer's SRAM usage low. Slint 1.17 does not support `Path`
 /// items in `render_by_line`, so this backend intentionally does not accept `Path` items.
@@ -372,6 +443,8 @@ struct FbLineBuffer<'a> {
     fb: &'a mut FbFile,
     output: [PanelRgb565Pixel; LCD_H_RES as usize],
     row_cache: [u8; RENDER_BATCH_BYTES],
+    cached_x: usize,
+    cached_width: usize,
     cached_row_start: usize,
     cached_row_count: usize,
     result: &'a mut IoResult<()>,
@@ -399,6 +472,8 @@ impl<'a> FbLineBuffer<'a> {
             fb,
             output: [PanelRgb565Pixel(0); LCD_H_RES as usize],
             row_cache: [0; RENDER_BATCH_BYTES],
+            cached_x: 0,
+            cached_width: 0,
             cached_row_start: 0,
             cached_row_count: 0,
             result,
@@ -412,35 +487,58 @@ impl<'a> FbLineBuffer<'a> {
         }
 
         if self.result.is_ok() {
-            let byte_count = self.cached_row_count * RGB565_ROW_BYTES;
+            let row_bytes = self.cached_width * 2;
+            let byte_count = self.cached_row_count * row_bytes;
             let io_start = uptime_micros();
-            *self.result =
-                self.fb
-                    .draw_line(&self.row_cache[..byte_count], 0, self.cached_row_start);
+            let draw_result = self.fb.draw_area(
+                &self.row_cache[..byte_count],
+                self.cached_x,
+                self.cached_row_start,
+                self.cached_width,
+                self.cached_row_count,
+                row_bytes,
+            );
             self.stats.io_us += uptime_micros().saturating_sub(io_start);
-            if self.result.is_ok() {
-                self.stats.full_lines += self.cached_row_count;
-                self.stats.pixels += self.cached_row_count * LCD_H_RES as usize;
-                self.stats.full_writes += 1;
-                self.stats.bytes += byte_count;
+            match draw_result {
+                Ok(write_count) => {
+                    let is_full_width =
+                        self.cached_x == 0 && self.cached_width == LCD_H_RES as usize;
+                    if is_full_width {
+                        self.stats.full_lines += self.cached_row_count;
+                        self.stats.full_writes += write_count;
+                    } else {
+                        self.stats.partial_lines += self.cached_row_count;
+                        self.stats.partial_writes += write_count;
+                    }
+                    self.stats.pixels += self.cached_row_count * self.cached_width;
+                    self.stats.bytes += byte_count;
+                }
+                Err(error) => *self.result = Err(error),
             }
         }
         self.cached_row_count = 0;
     }
 
-    fn cache_full_line(&mut self, line: usize) {
+    fn cache_rgb565_line(&mut self, line: usize, x: usize, width: usize) {
         if self.cached_row_count == 0 {
             self.cached_row_start = line;
-        } else if line != self.cached_row_start + self.cached_row_count {
+            self.cached_x = x;
+            self.cached_width = width;
+        } else if line != self.cached_row_start + self.cached_row_count
+            || x != self.cached_x
+            || width != self.cached_width
+        {
             self.flush_rows();
             if self.result.is_err() {
                 return;
             }
             self.cached_row_start = line;
+            self.cached_x = x;
+            self.cached_width = width;
         }
 
         debug_assert!(matches!(self.fb.pixel_format, PixelFormat::Rgb565));
-        let pixels = &self.output[..LCD_H_RES as usize];
+        let pixels = &self.output[..width];
         // PanelRgb565Pixel is transparent over u16 and every element was
         // initialized by Slint before this copy.
         let bytes = unsafe {
@@ -449,8 +547,9 @@ impl<'a> FbLineBuffer<'a> {
                 core::mem::size_of_val(pixels),
             )
         };
-        let offset = self.cached_row_count * RGB565_ROW_BYTES;
-        self.row_cache[offset..offset + RGB565_ROW_BYTES].copy_from_slice(bytes);
+        let row_bytes = width * 2;
+        let offset = self.cached_row_count * row_bytes;
+        self.row_cache[offset..offset + row_bytes].copy_from_slice(bytes);
         self.cached_row_count += 1;
         if self.cached_row_count == RENDER_BATCH_ROWS {
             self.flush_rows();
@@ -473,50 +572,27 @@ impl LineBufferProvider for FbLineBuffer<'_> {
     ) {
         let pixel_count = range.len();
         debug_assert!(pixel_count <= self.output.len());
-        let can_batch = matches!(self.fb.pixel_format, PixelFormat::Rgb565)
-            && range.start == 0
-            && pixel_count == LCD_H_RES as usize;
 
-        // Partial rows have a framebuffer stride between them and cannot be
-        // represented by the same compact write as consecutive full rows.
-        if !can_batch {
-            self.flush_rows();
+        {
+            let pixels = &mut self.output[..pixel_count];
+            background::copy_background_line(pixels, line, range.start);
+            render_fn(pixels);
         }
 
-        let pixels = &mut self.output[..pixel_count];
-        background::copy_background_line(pixels, line, range.start);
-        render_fn(pixels);
-
         if self.result.is_ok() {
-            if can_batch {
-                self.cache_full_line(line);
-            } else {
-                match self.fb.pixel_format {
-                    PixelFormat::Rgb565 => {
-                        let bytes = unsafe {
-                            core::slice::from_raw_parts(
-                                pixels.as_ptr().cast::<u8>(),
-                                core::mem::size_of_val(pixels),
-                            )
-                        };
-                        let io_start = uptime_micros();
-                        *self.result = self.fb.draw_line(bytes, range.start, line);
-                        self.stats.io_us += uptime_micros().saturating_sub(io_start);
-                        if self.result.is_ok() {
-                            self.stats.partial_lines += 1;
-                            self.stats.pixels += pixel_count;
-                            self.stats.partial_writes += 1;
-                            self.stats.bytes += bytes.len();
-                        }
-                    }
-                    PixelFormat::Bgra8888 => {
+            match self.fb.pixel_format {
+                PixelFormat::Rgb565 => {
+                    self.cache_rgb565_line(line, range.start, pixel_count);
+                }
+                PixelFormat::Bgra8888 => {
+                    self.flush_rows();
+                    if self.result.is_ok() {
+                        let pixels = &self.output[..pixel_count];
                         let byte_count = encode_bgra8888(&mut self.row_cache, pixels);
                         let io_start = uptime_micros();
-                        *self.result = self.fb.draw_line(
-                            &self.row_cache[..byte_count],
-                            range.start,
-                            line,
-                        );
+                        *self.result =
+                            self.fb
+                                .draw_line(&self.row_cache[..byte_count], range.start, line);
                         self.stats.io_us += uptime_micros().saturating_sub(io_start);
                         if self.result.is_ok() {
                             self.stats.partial_lines += 1;
@@ -635,7 +711,6 @@ pub(crate) fn uptime_micros() -> u128 {
     }
     (ts.tv_sec as u128) * 1_000_000 + (ts.tv_nsec as u128) / 1_000
 }
-
 
 struct BluekernelBackend {
     window: RefCell<Option<Rc<slint::platform::software_renderer::MinimalSoftwareWindow>>>,
