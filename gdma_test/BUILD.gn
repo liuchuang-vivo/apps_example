@@ -1,4 +1,4 @@
-# Copyright (c) 2025 vivo Mobile Communication Co., Ltd.
+# Copyright (c) 2026 vivo Mobile Communication Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import("//build/boards/${board}.gni")
 import("//build/templates/rust.gni")
 import("//build/toolchain/blueos.gni")
 
-group("check_apps") {
+build_rust("gdma_test_example") {
+  crate_name = "gdma_test_example"
+  crate_type = "bin"
+
+  sources = [ "src/main.rs" ]
   deps = [
-    "//apps/example/blinky:blinky_example",
-    "//apps/example/fs:fs_example",
-    "//apps/example/ftp_client:ftp_client_example_test_runner",
-    "//apps/example/gdma_test:gdma_test_example",
-    "//apps/example/net:net_example",
-    "//apps/example/no_std:no_std_example_runner",
+    "//kernel/hal:blueos_hal",
+    "//kernel/driver:blueos_driver",
+    "//kernel/rsrt:rsrt_std",
+    "//libc",
+    "//librs",
   ]
+  linker_script = default_linker_script
+  configs += [ "//build/boards/${board}:kernel_config" ]
 }
